@@ -76,25 +76,34 @@ async def start_telegram():
         else:
             logger.info("✅ Telegram Monitor Active.")
             
+            # Run background monitor
+            asyncio.create_task(client.run_until_disconnected())
+
             # --- STARTUP TEST: Process last message from each channel ---
             logger.info("🧪 Running startup test: Fetching last message from channels...")
+            
+            # Wait a few seconds for WebSocket clients to connect after a server restart
+            await asyncio.sleep(5) 
+            
             for channel in CHANNELS:
                 try:
+                    logger.info(f"🔍 Checking channel: {channel}")
                     async for message in client.iter_messages(channel, limit=1):
                         text = (message.text or "").replace('\n', ' ')
+                        logger.info(f"📖 Last message in {channel}: {text[:50]}...")
                         codes = re.findall(r'stakecom[a-zA-Z0-9]+', text)
                         if not codes:
                             codes = re.findall(r'\b[a-zA-Z0-9]{8,20}\b', text)
                         
                         valid = [c for c in set(codes) if not c.isdigit() and 'telegram' not in c.lower()]
+                        if not valid:
+                            logger.info(f"ℹ️ No valid code found in last message of {channel}")
                         for code in valid:
                             logger.info(f"🧪 Startup Test [{channel}]: Found code {code}")
                             await manager.broadcast_drop(code, channel)
                 except Exception as e:
                     logger.error(f"⚠️ Failed to fetch last message for {channel}: {e}")
             # --- END STARTUP TEST ---
-
-            await client.run_until_disconnected()
     except Exception as e:
         logger.error(f"❌ Telegram Connection Error: {e}")
 
