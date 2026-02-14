@@ -67,29 +67,28 @@ async def handler(event):
         logger.error(f"❌ Event Handler Error: {e}")
 
 async def start_telegram():
-    logger.info("🚀 [STARTUP] Step 1: Connecting to Telegram...")
+    logger.info("🚀 [STARTUP] Step 1: Initializing Telegram start()...")
     try:
-        await client.connect()
-        logger.info("🚀 [STARTUP] Step 2: Connection confirmed. Verifying session...")
+        # start() is more robust than connect() as it handles the full handshake
+        # Since we already ran login.py, this will be non-interactive
+        await client.start()
         
-        # Adding a small delay to ensure handshake is finished
-        await asyncio.sleep(2)
+        logger.info("🚀 [STARTUP] Step 2: Telegram fully initialized.")
         
         is_auth = await client.is_user_authorized()
         if not is_auth:
-            logger.error("❌ [STARTUP] Step 3: AUTH FAILED. You must run login.py first.")
+            logger.error("❌ [STARTUP] Step 3: AUTH FAILED. Session is invalid.")
             return
 
-        logger.info("🚀 [STARTUP] Step 3: Auth verified! Setting up test broadcast...")
+        logger.info("🚀 [STARTUP] Step 3: Auth verified!")
         
         # Give extension time to connect
-        await asyncio.sleep(8)
+        logger.info("⏳ Waiting 10s for extensions to link before startup check...")
+        await asyncio.sleep(10)
         
-        logger.info("🚀 [STARTUP] Step 4: Running startup check on channels...")
         for channel in CHANNELS:
             try:
-                logger.info(f"🔍 [TEST] Checking @{channel}...")
-                # Fetching multiple to increase chance of finding a code in history
+                logger.info(f"🔍 [TEST] Checking @{channel} history...")
                 async for message in client.iter_messages(channel, limit=1):
                     text = (message.text or "").replace('\n', ' ')
                     codes = re.findall(r'stakecom[a-zA-Z0-9]+', text) or re.findall(r'\b[a-zA-Z0-9]{8,20}\b', text)
