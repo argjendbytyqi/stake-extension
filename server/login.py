@@ -1,38 +1,36 @@
-from telethon import TelegramClient
 import os
 import logging
+from telethon import TelegramClient
 from dotenv import load_dotenv
-import asyncio
 
-# Enable high-level logging
+# Enable very detailed logging
 logging.basicConfig(format='[%(levelname) 5s/%(asctime)s] %(name)s: %(message)s',
-                    level=logging.INFO)
+                    level=logging.DEBUG)
 
 load_dotenv()
 
 API_ID = 39003063
 API_HASH = 'b19980f250f5053c4be259bb05668a35'
 
-client = TelegramClient('broadcaster_session', API_ID, API_HASH)
+def main():
+    # 1. Clean up old session to start fresh
+    if os.path.exists('broadcaster_session.session'):
+        print("DEBUG: Removing old session file...")
+        os.remove('broadcaster_session.session')
 
-async def main():
-    print("DEBUG: Starting manual auth flow...")
-    await client.connect()
+    print("DEBUG: Starting synchronous login flow...")
     
-    if not await client.is_user_authorized():
-        phone = input("Please enter your phone number (with country code, e.g. +123456789): ")
-        await client.send_code_request(phone)
-        code = input("Please enter the code you received: ")
-        try:
-            await client.sign_in(phone, code)
-        except Exception as e:
-            if "password" in str(e).lower():
-                password = input("Please enter your 2FA password: ")
-                await client.sign_in(password=password)
-            else:
-                raise e
-                
-    print("✅ Login successful! Session saved.")
+    # 2. Use the high-level start() method which handles connection/auth automatically
+    # We use sync mode here to ensure the terminal prompts are visible
+    client = TelegramClient('broadcaster_session', API_ID, API_HASH)
+    
+    with client:
+        print("\n" + "="*30)
+        print("✅ CONNECTION SUCCESSFUL!")
+        print("="*30)
+        client.send_message('me', 'Hello from Stake-Extension Broadcaster on EC2!')
+        print("Verified: Sent a test message to your 'Saved Messages'.")
+        print("Login complete. You can now run 'python3 server.py'.")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
