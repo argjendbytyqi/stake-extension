@@ -7,8 +7,8 @@ function connect() {
     if (!key) return;
 
     console.log("🔗 Connecting to server with key:", key);
-    // Replace with your EC2 IP later
-    socket = new WebSocket(`ws://localhost:8000/ws/${key}`);
+    // Replace with your EC2 IP
+    socket = new WebSocket(`ws://3.70.184.187:8000/ws/${key}`);
 
     socket.onopen = () => {
       isConnected = true;
