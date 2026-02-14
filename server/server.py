@@ -52,58 +52,62 @@ client = TelegramClient('broadcaster_session', API_ID, API_HASH)
 
 @client.on(events.NewMessage(chats=CHANNELS))
 async def handler(event):
-    chat = await event.get_chat()
-    channel_name = getattr(chat, 'username', 'Unknown')
-    text = (event.raw_text or "").replace('\n', ' ')
-    codes = re.findall(r'stakecom[a-zA-Z0-9]+', text)
-    if not codes:
-        codes = re.findall(r'\b[a-zA-Z0-9]{8,20}\b', text)
-    valid_codes = [c for c in set(codes) if not c.isdigit() and 'telegram' not in c.lower()]
-    for code in valid_codes:
-        logger.info(f"🔥 NEW DROP [{channel_name}]: {code}")
-        await manager.broadcast_drop(code, channel_name)
+    try:
+        chat = await event.get_chat()
+        channel_name = getattr(chat, 'username', 'Unknown')
+        text = (event.raw_text or "").replace('\n', ' ')
+        codes = re.findall(r'stakecom[a-zA-Z0-9]+', text)
+        if not codes:
+            codes = re.findall(r'\b[a-zA-Z0-9]{8,20}\b', text)
+        valid_codes = [c for c in set(codes) if not c.isdigit() and 'telegram' not in c.lower()]
+        for code in valid_codes:
+            logger.info(f"🔥 NEW DROP [{channel_name}]: {code}")
+            await manager.broadcast_drop(code, channel_name)
+    except Exception as e:
+        logger.error(f"❌ Event Handler Error: {e}")
 
 async def start_telegram():
-    logger.info("🚀 [TELEGRAM] Initializing connection...")
+    logger.info("🚀 [STARTUP] Step 1: Connecting to Telegram...")
     try:
         await client.connect()
-        logger.info("⏳ [TELEGRAM] Checking authorization status...")
+        logger.info("🚀 [STARTUP] Step 2: Connection confirmed. Verifying session...")
+        
+        # Adding a small delay to ensure handshake is finished
+        await asyncio.sleep(2)
         
         is_auth = await client.is_user_authorized()
         if not is_auth:
-            logger.error("❌ [TELEGRAM] AUTH ERROR: Session not authorized. Please run 'python3 login.py' again.")
+            logger.error("❌ [STARTUP] Step 3: AUTH FAILED. You must run login.py first.")
             return
 
-        logger.info("✅ [TELEGRAM] Monitor Active and Logged In.")
+        logger.info("🚀 [STARTUP] Step 3: Auth verified! Setting up test broadcast...")
         
-        # --- STARTUP TEST: Process last message from each channel ---
-        logger.info("🧪 [TEST] Running startup broadcast test in 10 seconds...")
-        await asyncio.sleep(10) # Give users time to connect after restart
+        # Give extension time to connect
+        await asyncio.sleep(8)
         
+        logger.info("🚀 [STARTUP] Step 4: Running startup check on channels...")
         for channel in CHANNELS:
             try:
-                logger.info(f"🔍 [TEST] Checking latest message in @{channel}...")
+                logger.info(f"🔍 [TEST] Checking @{channel}...")
+                # Fetching multiple to increase chance of finding a code in history
                 async for message in client.iter_messages(channel, limit=1):
                     text = (message.text or "").replace('\n', ' ')
-                    logger.info(f"📖 [TEST] Found: {text[:60]}...")
-                    codes = re.findall(r'stakecom[a-zA-Z0-9]+', text)
-                    if not codes:
-                        codes = re.findall(r'\b[a-zA-Z0-9]{8,20}\b', text)
-                    
+                    codes = re.findall(r'stakecom[a-zA-Z0-9]+', text) or re.findall(r'\b[a-zA-Z0-9]{8,20}\b', text)
                     valid = [c for c in set(codes) if not c.isdigit() and 'telegram' not in c.lower()]
-                    if not valid:
-                        logger.info(f"ℹ️ [TEST] No valid codes found in @{channel}")
-                    for code in valid:
-                        logger.info(f"🧪 [TEST] Broadcasting latest code: {code}")
-                        await manager.broadcast_drop(code, channel)
+                    
+                    if valid:
+                        logger.info(f"🧪 [TEST] Broadcasting latest code from @{channel}: {valid[0]}")
+                        await manager.broadcast_drop(valid[0], channel)
+                    else:
+                        logger.info(f"ℹ️ [TEST] No codes in @{channel} history.")
             except Exception as e:
-                logger.error(f"⚠️ [TEST] Error checking @{channel}: {e}")
+                logger.error(f"⚠️ [TEST] Error in @{channel}: {e}")
         
-        logger.info("📡 [TELEGRAM] Continuous monitoring started.")
+        logger.info("📡 [TELEGRAM] Monitor fully armed and listening.")
         await client.run_until_disconnected()
         
     except Exception as e:
-        logger.error(f"❌ [TELEGRAM] Fatal Connection Error: {e}")
+        logger.error(f"❌ [STARTUP] Fatal Error: {e}", exc_info=True)
 
 # --- LIFESPAN HANDLER ---
 @asynccontextmanager
@@ -112,7 +116,7 @@ async def lifespan(app: FastAPI):
     yield
     tg_task.cancel()
     await client.disconnect()
-    logger.info("🛑 [SERVER] Shutting down...")
+    logger.info("🛑 [SERVER] Shutdown complete.")
 
 app = FastAPI(lifespan=lifespan)
 
@@ -130,7 +134,6 @@ async def test_drop(channel: str, code: str):
 @app.websocket("/ws/{license_key}")
 async def websocket_endpoint(websocket: WebSocket, license_key: str):
     if license_key not in VALID_KEYS:
-        logger.warning(f"🚫 [WS] Invalid license: {license_key}")
         await websocket.close(code=4003) 
         return
 
