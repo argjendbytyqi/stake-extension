@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { width: 300px; font-family: sans-serif; padding: 15px; background: #0f212e; color: white; }
+    h2 { color: #1475e1; margin-top: 0; }
+    input { width: 100%; padding: 8px; margin: 10px 0; border-radius: 4px; border: none; box-sizing: border-box; }
+    button { width: 100%; padding: 10px; background: #1475e1; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+    button:hover { background: #1a8bff; }
+    .status { margin-top: 10px; font-size: 12px; }
+    .status.on { color: #00e676; }
+    .status.off { color: #ff5252; }
+  </style>
+</head>
+<body>
+  <h2>Stake Claimer</h2>
+  <div id="license-section">
+    <label>License Key:</label>
+    <input type="text" id="license-key" placeholder="Enter key...">
+    <button id="save-btn">Activate</button>
+  </div>
+  <div class="status">Status: <span id="conn-status" class="off">Disconnected</span></div>
+  <script src="popup.js"></script>
+</body>
+</html>

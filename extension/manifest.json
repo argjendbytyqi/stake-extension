@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Stake Auto-Claimer Pro",
+  "version": "1.0.0",
+  "description": "High-speed automatic drop claiming for Stake.",
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://stake.com/*",
+    "https://stake.us/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}

@@ -1,0 +1,10 @@
+.env
+*.session
+__pycache__/
+node_modules/
+.DS_Store
+*.log
+*.png
+extension/dist/
+server/broadcaster_session.session
+server/stake_bot_telethon.session
