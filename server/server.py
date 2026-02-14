@@ -59,9 +59,19 @@ async def handler(event):
 # --- LIFESPAN HANDLER ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("🚀 Starting Telegram Monitor...")
-    await client.start()
-    asyncio.create_task(client.run_until_disconnected())
+    print("🚀 Connecting to Telegram...")
+    try:
+        await client.connect()
+        if not await client.is_user_authorized():
+            print("❌ ERROR: Not authorized! Run login.py first.")
+            # We don't want to block the server startup if auth fails
+        else:
+            print("✅ Telegram Monitor Active.")
+            # Run in the background
+            asyncio.create_task(client.run_until_disconnected())
+    except Exception as e:
+        print(f"❌ Telegram Connection Error: {e}")
+    
     yield
     print("🛑 Shutting down...")
     await client.disconnect()
@@ -97,4 +107,5 @@ async def websocket_endpoint(websocket: WebSocket, license_key: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Use log_level info to see startup clearly
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
