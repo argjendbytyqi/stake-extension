@@ -2,3 +2,5 @@ fastapi
 uvicorn
 telethon
 python-dotenv
+opencv-python-headless
+pytesseract
