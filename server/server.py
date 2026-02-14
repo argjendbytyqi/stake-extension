@@ -2,10 +2,15 @@ import asyncio
 import os
 import re
 import json
+import logging
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from telethon import TelegramClient, events
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
+
+# Enable logging
+logging.basicConfig(format='[%(levelname) 5s/%(asctime)s] %(name)s: %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Load env
 load_dotenv()
@@ -24,15 +29,15 @@ class ConnectionManager:
     async def connect(self, key: str, websocket: WebSocket):
         await websocket.accept()
         self.active_connections[key] = websocket
-        print(f"➕ User connected: {key}")
+        logger.info(f"➕ User connected: {key}")
 
     def disconnect(self, key: str):
         if key in self.active_connections:
             del self.active_connections[key]
-            print(f"➖ User disconnected: {key}")
+            logger.info(f"➖ User disconnected: {key}")
 
     async def broadcast_drop(self, code: str):
-        print(f"📡 Broadcasting code: {code} to {len(self.active_connections)} users")
+        logger.info(f"📡 Broadcasting code: {code} to {len(self.active_connections)} users")
         message = json.dumps({"type": "DROP", "code": code})
         for key, connection in self.active_connections.items():
             try:
@@ -43,6 +48,7 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 # --- TELEGRAM CLIENT ---
+# Note: Ensure the session name matches the one used in login.py
 client = TelegramClient('broadcaster_session', API_ID, API_HASH)
 
 @client.on(events.NewMessage(chats=CHANNEL_USERNAME))
@@ -53,28 +59,31 @@ async def handler(event):
         codes = re.findall(r'\b[a-zA-Z0-9]{8,20}\b', text)
     valid_codes = [c for c in set(codes) if not c.isdigit() and 'telegram' not in c.lower()]
     for code in valid_codes:
-        print(f"🔥 NEW DROP DETECTED: {code}")
+        logger.info(f"🔥 NEW DROP DETECTED: {code}")
         await manager.broadcast_drop(code)
+
+async def start_telegram():
+    logger.info("🚀 Connecting to Telegram...")
+    try:
+        await client.connect()
+        if not await client.is_user_authorized():
+            logger.error("❌ ERROR: Not authorized! Run login.py first.")
+        else:
+            logger.info("✅ Telegram Monitor Active.")
+            await client.run_until_disconnected()
+    except Exception as e:
+        logger.error(f"❌ Telegram Connection Error: {e}")
 
 # --- LIFESPAN HANDLER ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("🚀 Connecting to Telegram...")
-    try:
-        await client.connect()
-        if not await client.is_user_authorized():
-            print("❌ ERROR: Not authorized! Run login.py first.")
-            # We don't want to block the server startup if auth fails
-        else:
-            print("✅ Telegram Monitor Active.")
-            # Run in the background
-            asyncio.create_task(client.run_until_disconnected())
-    except Exception as e:
-        print(f"❌ Telegram Connection Error: {e}")
-    
+    # Start Telegram monitor in the background so it doesn't block FastAPI startup
+    tg_task = asyncio.create_task(start_telegram())
     yield
-    print("🛑 Shutting down...")
+    # Cleanup
+    tg_task.cancel()
     await client.disconnect()
+    logger.info("🛑 Shutting down...")
 
 app = FastAPI(lifespan=lifespan)
 
@@ -85,14 +94,14 @@ async def root():
 
 @app.get("/test-drop/{code}")
 async def test_drop(code: str):
-    print(f"🧪 Manual test drop triggered: {code}")
+    logger.info(f"🧪 Manual test drop triggered: {code}")
     await manager.broadcast_drop(code)
     return {"status": "Broadcasted", "code": code}
 
 @app.websocket("/ws/{license_key}")
 async def websocket_endpoint(websocket: WebSocket, license_key: str):
     if license_key not in VALID_KEYS:
-        print(f"🚫 Invalid license attempt: {license_key}")
+        logger.warning(f"🚫 Invalid license attempt: {license_key}")
         await websocket.close(code=4003) 
         return
 
@@ -107,5 +116,5 @@ async def websocket_endpoint(websocket: WebSocket, license_key: str):
 
 if __name__ == "__main__":
     import uvicorn
-    # Use log_level info to see startup clearly
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+    # Log to 0.0.0.0 so external extensions can connect via public IP
+    uvicorn.run(app, host="0.0.0.0", port=8000)
