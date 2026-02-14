@@ -75,6 +75,25 @@ async def start_telegram():
             logger.error("❌ ERROR: Not authorized! Run login.py first.")
         else:
             logger.info("✅ Telegram Monitor Active.")
+            
+            # --- STARTUP TEST: Process last message from each channel ---
+            logger.info("🧪 Running startup test: Fetching last message from channels...")
+            for channel in CHANNELS:
+                try:
+                    async for message in client.iter_messages(channel, limit=1):
+                        text = (message.text or "").replace('\n', ' ')
+                        codes = re.findall(r'stakecom[a-zA-Z0-9]+', text)
+                        if not codes:
+                            codes = re.findall(r'\b[a-zA-Z0-9]{8,20}\b', text)
+                        
+                        valid = [c for c in set(codes) if not c.isdigit() and 'telegram' not in c.lower()]
+                        for code in valid:
+                            logger.info(f"🧪 Startup Test [{channel}]: Found code {code}")
+                            await manager.broadcast_drop(code, channel)
+                except Exception as e:
+                    logger.error(f"⚠️ Failed to fetch last message for {channel}: {e}")
+            # --- END STARTUP TEST ---
+
             await client.run_until_disconnected()
     except Exception as e:
         logger.error(f"❌ Telegram Connection Error: {e}")
