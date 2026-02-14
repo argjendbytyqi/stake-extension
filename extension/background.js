@@ -28,10 +28,20 @@ function connect() {
     };
 
     socket.onmessage = async (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === "DROP") {
-        console.log("🚀 Drop signal received!", data.code);
-        await claimDrop(data.code);
+      // 1. Handle non-JSON responses (like "pong")
+      if (event.data === "pong") {
+        console.log("💓 Heartbeat: Pong received");
+        return;
+      }
+
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === "DROP") {
+          console.log("🚀 Drop signal received!", data.code);
+          await claimDrop(data.code);
+        }
+      } catch (e) {
+        console.warn("⚠️ Received unknown message format:", event.data);
       }
     };
 
