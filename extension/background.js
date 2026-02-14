@@ -14,13 +14,17 @@ function connect() {
       isConnected = true;
       console.log("✅ Connected to Stake Broadcaster");
       
-      // Heartbeat to keep connection alive and service worker awake
-      if (window.heartbeatInterval) clearInterval(window.heartbeatInterval);
-      window.heartbeatInterval = setInterval(() => {
-        if (socket && socket.readyState === WebSocket.OPEN) {
-          socket.send("ping");
-        }
-      }, 20000); // Every 20 seconds
+      // Professional Heartbeat: Randomized between 20-30s to prevent server spikes
+      const scheduleNextPing = () => {
+        const jitter = Math.floor(Math.random() * 10000); // 0-10 seconds
+        setTimeout(() => {
+          if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send("ping");
+            scheduleNextPing();
+          }
+        }, 20000 + jitter);
+      };
+      scheduleNextPing();
     };
 
     socket.onmessage = async (event) => {
