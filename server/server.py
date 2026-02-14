@@ -4,6 +4,7 @@ import re
 import json
 import logging
 import threading
+import sqlite3
 import cv2
 import pytesseract
 from datetime import datetime
@@ -23,39 +24,33 @@ load_dotenv()
 API_ID = 39003063
 API_HASH = 'b19980f250f5053c4be259bb05668a35'
 CHANNELS = ['StakecomDailyDrops', 'stakecomhighrollers']
-VALID_KEYS = ["ADMIN-TEST-KEY", "USER-12345"]
+DB_PATH = 'licenses.db'
 
-# Global store for dashboard
-stats = {
-    "total_claims": 0,
-    "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-    "history": []
-}
+# --- DATABASE SETUP ---
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute('''CREATE TABLE IF NOT EXISTS licenses 
+                    (key TEXT PRIMARY KEY, status TEXT DEFAULT 'active', total_claims INTEGER DEFAULT 0)''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS history 
+                    (time TEXT, key TEXT, channel TEXT, code TEXT, status TEXT)''')
+    conn.commit()
+    conn.close()
 
-# --- OCR LOGIC ---
-def extract_text_from_media(file_path):
-    """Extracts text from video frames using OCR."""
-    logger.info(f"🎞️ Analyzing video: {file_path}")
-    try:
-        cap = cv2.VideoCapture(file_path)
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        extracted_text = ""
-        # Check every 15th frame to be fast
-        for idx in range(0, total_frames, 15):
-            cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
-            success, image = cap.read()
-            if success:
-                gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-                # Tesseract OCR
-                extracted_text += " " + pytesseract.image_to_string(gray)
-                # Try thresholding for cleaner OCR
-                _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-                extracted_text += " " + pytesseract.image_to_string(thresh)
-        cap.release()
-        return extracted_text
-    except Exception as e:
-        logger.error(f"❌ OCR Error: {e}")
-        return ""
+def is_key_valid(key):
+    conn = sqlite3.connect(DB_PATH)
+    res = conn.execute("SELECT status FROM licenses WHERE key = ? AND status = 'active'", (key,)).fetchone()
+    conn.close()
+    return res is not None
+
+def log_claim(key, channel, code, status):
+    conn = sqlite3.connect(DB_PATH)
+    now = datetime.now().strftime("%H:%M:%S")
+    conn.execute("INSERT INTO history VALUES (?, ?, ?, ?, ?)", (now, key, channel, code, status))
+    conn.execute("UPDATE licenses SET total_claims = total_claims + 1 WHERE key = ?", (key,))
+    conn.commit()
+    conn.close()
+
+init_db()
 
 # --- CONNECTION MANAGER ---
 class ConnectionManager:
@@ -84,6 +79,26 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
+# --- OCR LOGIC ---
+def extract_text_from_media(file_path):
+    try:
+        cap = cv2.VideoCapture(file_path)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        extracted_text = ""
+        for idx in range(0, total_frames, 15):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+            success, image = cap.read()
+            if success:
+                gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+                extracted_text += " " + pytesseract.image_to_string(gray)
+                _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                extracted_text += " " + pytesseract.image_to_string(thresh)
+        cap.release()
+        return extracted_text
+    except Exception as e:
+        logger.error(f"❌ OCR Error: {e}")
+        return ""
+
 # --- TELEGRAM WORKER ---
 def run_telegram_worker(loop, broadcaster_manager):
     asyncio.set_event_loop(loop)
@@ -95,13 +110,9 @@ def run_telegram_worker(loop, broadcaster_manager):
             chat = await event.get_chat()
             channel_name = getattr(chat, 'username', 'Unknown')
             text = (event.raw_text or "").replace('\n', ' ')
-            
-            # 1. Check for text codes
             codes = re.findall(r'stakecom[a-zA-Z0-9]+', text) or re.findall(r'\b[a-zA-Z0-9]{8,20}\b', text)
             
-            # 2. Check for media codes (Videos/Images)
             if not codes and event.media:
-                logger.info(f"📦 Media detected in {channel_name}, downloading...")
                 file_path = await event.download_media(file="temp_media")
                 media_text = extract_text_from_media(file_path)
                 codes = re.findall(r'stakecom[a-zA-Z0-9]+', media_text) or re.findall(r'\b[a-zA-Z0-9]{8,20}\b', media_text)
@@ -116,34 +127,20 @@ def run_telegram_worker(loop, broadcaster_manager):
     async def main_worker():
         await client.start()
         logger.info("✅ [TELEGRAM] Worker Active.")
-        
-        # Initial history check
-        logger.info("🧪 [STARTUP] Waiting 15s for extensions before history check...")
         await asyncio.sleep(15)
-        
         for channel in CHANNELS:
             try:
-                logger.info(f"🔍 [STARTUP] Checking history for @{channel}...")
                 async for message in client.iter_messages(channel, limit=1):
                     text = (message.text or "").replace('\n', ' ')
                     codes = re.findall(r'stakecom[a-zA-Z0-9]+', text) or re.findall(r'\b[a-zA-Z0-9]{8,20}\b', text)
-                    
                     if not codes and message.media:
                         file_path = await message.download_media(file="temp_startup")
                         media_text = extract_text_from_media(file_path)
                         codes = re.findall(r'stakecom[a-zA-Z0-9]+', media_text) or re.findall(r'\b[a-zA-Z0-9]{8,20}\b', media_text)
                         if os.path.exists(file_path): os.remove(file_path)
-
                     valid = [c for c in set(codes) if not c.isdigit() and 'telegram' not in c.lower()]
-                    if valid:
-                        logger.info(f"🧪 [STARTUP] Found code in history: {valid[0]}")
-                        asyncio.run_coroutine_threadsafe(broadcaster_manager.broadcast_drop(valid[0], channel), main_loop)
-                    else:
-                        logger.info(f"ℹ️ [STARTUP] No code found in last message of @{channel}")
-            except Exception as e:
-                logger.error(f"⚠️ [STARTUP] History check failed for {channel}: {e}")
-        
-        logger.info("📡 [TELEGRAM] Continuous monitoring enabled.")
+                    if valid: asyncio.run_coroutine_threadsafe(broadcaster_manager.broadcast_drop(valid[0], channel), main_loop)
+            except: pass
         await client.run_until_disconnected()
 
     loop.run_until_complete(main_worker())
@@ -154,8 +151,7 @@ main_loop = None
 async def lifespan(app: FastAPI):
     global main_loop
     main_loop = asyncio.get_running_loop()
-    worker_loop = asyncio.new_event_loop()
-    threading.Thread(target=run_telegram_worker, args=(worker_loop, manager), daemon=True).start()
+    threading.Thread(target=run_telegram_worker, args=(asyncio.new_event_loop(), manager), daemon=True).start()
     yield
 
 app = FastAPI(lifespan=lifespan)
@@ -163,48 +159,34 @@ app = FastAPI(lifespan=lifespan)
 # --- ROUTES ---
 @app.get("/", response_class=HTMLResponse)
 async def admin_dashboard():
-    history_html = "".join([f"<tr><td>{h['time']}</td><td>{h['key']}</td><td>{h['channel']}</td><td>{h['code']}</td><td>{h['status']}</td></tr>" for h in reversed(stats['history'][-20:])])
+    conn = sqlite3.connect(DB_PATH)
+    history = conn.execute("SELECT * FROM history ORDER BY rowid DESC LIMIT 20").fetchall()
+    total_db_claims = conn.execute("SELECT SUM(total_claims) FROM licenses").fetchone()[0] or 0
+    conn.close()
+
+    history_html = "".join([f"<tr><td>{h[0]}</td><td>{h[1]}</td><td>{h[2]}</td><td>{h[3]}</td><td>{h[4]}</td></tr>" for h in history])
     users_html = "".join([f"<li>{key} <span style='color:#00e676'>● Online</span></li>" for key in manager.active_connections.keys()])
     
     return f"""
-    <html>
-    <head><title>Stake Bot Admin</title><style>
+    <html><head><title>Stake Bot Admin</title><style>
         body {{ font-family: sans-serif; background: #0f212e; color: white; padding: 40px; }}
         .card {{ background: #1a2c38; padding: 20px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #243b4a; }}
         table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
         th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #243b4a; }}
-        th {{ color: #1475e1; }}
-        h1 {{ color: #1475e1; }}
-        .stat {{ font-size: 24px; font-weight: bold; color: #00e676; }}
-    </style></head>
-    <body>
+        th {{ color: #1475e1; }} h1 {{ color: #1475e1; }} .stat {{ font-size: 24px; font-weight: bold; color: #00e676; }}
+    </style></head><body>
         <h1>Didier Drogba Broadcaster</h1>
         <div style="display: flex; gap: 20px;">
-            <div class="card" style="flex: 1;">
-                <h3>Status</h3>
-                <p>Server Up Since: {stats['start_time']}</p>
-                <p>Total Claims Processed: <span class="stat">{stats['total_claims']}</span></p>
-            </div>
-            <div class="card" style="flex: 1;">
-                <h3>Active Extensions</h3>
-                <ul>{users_html or "No users connected"}</ul>
-            </div>
+            <div class="card" style="flex: 1;"><h3>Status</h3><p>Total Database Claims: <span class="stat">{total_db_claims}</span></p></div>
+            <div class="card" style="flex: 1;"><h3>Active Extensions</h3><ul>{users_html or "No users connected"}</ul></div>
         </div>
-        <div class="card">
-            <h3>Recent Claim History</h3>
-            <table>
-                <tr><th>Time</th><th>User Key</th><th>Channel</th><th>Code</th><th>Status</th></tr>
-                {history_html or "<tr><td colspan='5'>No claims recorded yet.</td></tr>"}
-            </table>
-        </div>
+        <div class="card"><h3>Recent Claim History</h3><table><tr><th>Time</th><th>User Key</th><th>Channel</th><th>Code</th><th>Status</th></tr>{history_html or "<tr><td colspan='5'>No claims recorded yet.</td></tr>"}</table></div>
         <script>setTimeout(() => location.reload(), 5000);</script>
-    </body>
-    </html>
-    """
+    </body></html>"""
 
 @app.websocket("/ws/{license_key}")
 async def websocket_endpoint(websocket: WebSocket, license_key: str):
-    if license_key not in VALID_KEYS:
+    if not is_key_valid(license_key):
         await websocket.close(code=4003)
         return
     await manager.connect(license_key, websocket)
@@ -213,14 +195,7 @@ async def websocket_endpoint(websocket: WebSocket, license_key: str):
             data = await websocket.receive_text()
             msg = json.loads(data)
             if msg.get("type") == "REPORT":
-                stats["total_claims"] += 1
-                stats["history"].append({
-                    "time": datetime.now().strftime("%H:%M:%S"),
-                    "key": license_key,
-                    "channel": msg.get("channel"),
-                    "code": msg.get("code"),
-                    "status": msg.get("status")
-                })
+                log_claim(license_key, msg.get("channel"), msg.get("code"), msg.get("status"))
     except: manager.disconnect(license_key)
 
 if __name__ == "__main__":
