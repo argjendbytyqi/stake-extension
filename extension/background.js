@@ -66,12 +66,15 @@ function setupAFK() {
       target: { tabId: tabs[0].id },
       func: async () => {
         try {
-          const keys = ['x-access-token', 'sessionToken', 'token', 'jwt'];
-          let token = null;
-          for (const k of keys) {
-            token = window.localStorage.getItem(k) || window.sessionStorage.getItem(k);
-            if (token) break;
-          }
+          const findToken = () => {
+            const keys = ['x-access-token', 'sessionToken', 'token', 'jwt'];
+            for (const k of keys) {
+              const val = window.localStorage.getItem(k) || window.sessionStorage.getItem(k);
+              if (val) return val;
+            }
+            return null;
+          };
+          const token = findToken();
           if (!token) return;
           
           await fetch('https://stake.com/_api/graphql', {
