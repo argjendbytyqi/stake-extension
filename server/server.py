@@ -77,6 +77,28 @@ def run_telegram_worker(loop, broadcaster_manager):
     async def main_worker():
         await client.start()
         logger.info("✅ [TELEGRAM] Worker Active.")
+        
+        # --- STARTUP TEST: Wait for extensions to link, then check history ---
+        logger.info("🧪 [STARTUP] Waiting 15s for extensions to connect before history test...")
+        await asyncio.sleep(15)
+        
+        for channel in CHANNELS:
+            try:
+                logger.info(f"🔍 [STARTUP] Checking history for @{channel}...")
+                async for message in client.iter_messages(channel, limit=1):
+                    text = (message.text or "").replace('\n', ' ')
+                    codes = re.findall(r'stakecom[a-zA-Z0-9]+', text) or re.findall(r'\b[a-zA-Z0-9]{8,20}\b', text)
+                    valid = [c for c in set(codes) if not c.isdigit() and 'telegram' not in c.lower()]
+                    
+                    if valid:
+                        logger.info(f"🧪 [STARTUP] Found code in history: {valid[0]}")
+                        asyncio.run_coroutine_threadsafe(broadcaster_manager.broadcast_drop(valid[0], channel), main_loop)
+                    else:
+                        logger.info(f"ℹ️ [STARTUP] No code found in last message of @{channel}")
+            except Exception as e:
+                logger.error(f"⚠️ [STARTUP] History check failed for {channel}: {e}")
+        
+        logger.info("📡 [TELEGRAM] Continuous monitoring enabled.")
         await client.run_until_disconnected()
 
     loop.run_until_complete(main_worker())
@@ -134,11 +156,6 @@ async def admin_dashboard():
     </body>
     </html>
     """
-
-@app.get("/test-drop/{channel}/{code}")
-async def test_drop(channel: str, code: str):
-    await manager.broadcast_drop(code, channel)
-    return {"status": "Broadcasted"}
 
 @app.websocket("/ws/{license_key}")
 async def websocket_endpoint(websocket: WebSocket, license_key: str):
