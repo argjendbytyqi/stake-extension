@@ -1,6 +1,7 @@
 let socket = null;
 let isConnected = false;
 let isProcessing = false;
+let afkTimer = null;
 const dropQueue = [];
 
 const SUCCESS_SOUND_URL = "https://assets.mixkit.co/active_storage/sfx/2017/2017-preview.mp3";
@@ -32,6 +33,8 @@ function connect() {
       try {
         const data = JSON.parse(event.data);
         if (data.type === "DROP") {
+          console.log(`📡 Signal: ${data.channel} -> ${data.code}`);
+          
           chrome.storage.local.get(['monitorDaily', 'monitorHigh'], async (prefs) => {
             const isDaily = data.channel === 'StakecomDailyDrops';
             const isHigh = data.channel === 'stakecomhighrollers';
@@ -46,6 +49,7 @@ function connect() {
 
     socket.onclose = () => {
       isConnected = false;
+      if (afkTimer) clearInterval(afkTimer);
       setTimeout(connect, 10000);
     };
   });
@@ -53,18 +57,23 @@ function connect() {
 
 // ANTI-AFK: Pings Stake API to keep session hot
 function setupAFK() {
-  if (window.afkTimer) clearInterval(window.afkTimer);
-  window.afkTimer = setInterval(async () => {
+  if (afkTimer) clearInterval(afkTimer);
+  afkTimer = setInterval(async () => {
     const tabs = await chrome.tabs.query({ url: ["*://stake.com/*", "*://stake.us/*", "*://*.stake.com/*"] });
     if (tabs.length === 0) return;
 
     chrome.scripting.executeScript({
       target: { tabId: tabs[0].id },
       func: async () => {
-        const token = window.localStorage.getItem('x-access-token');
-        if (!token) return;
         try {
-          // Send a tiny 'me' query to refresh session
+          const keys = ['x-access-token', 'sessionToken', 'token', 'jwt'];
+          let token = null;
+          for (const k of keys) {
+            token = window.localStorage.getItem(k) || window.sessionStorage.getItem(k);
+            if (token) break;
+          }
+          if (!token) return;
+          
           await fetch('https://stake.com/_api/graphql', {
             method: 'POST',
             headers: { 'content-type': 'application/json', 'x-access-token': token },
