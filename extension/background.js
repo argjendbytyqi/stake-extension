@@ -106,15 +106,37 @@ async function claimDrop(code, channel) {
     target: { tabId: tabs[0].id },
     func: async (dropCode, dropChannel, soundUrl) => {
       const findToken = () => {
-        const keys = ['x-access-token', 'sessionToken', 'token', 'jwt'];
-        for (const k of keys) {
+        // 1. Check all possible localStorage keys (Stake sometimes uses random prefixes)
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key.includes('token') || key.includes('session') || key === 'jwt') {
+            const val = localStorage.getItem(key);
+            if (val && val.length > 20) return val; // Real tokens are long
+          }
+        }
+        
+        // 2. Check standard keys specifically
+        const standardKeys = ['x-access-token', 'sessionToken', 'token', 'jwt'];
+        for (const k of standardKeys) {
           const val = window.localStorage.getItem(k) || window.sessionStorage.getItem(k);
           if (val) return val;
         }
+
+        // 3. Check cookies
+        const cookieMatch = document.cookie.match(/session=([^;]+)/);
+        if (cookieMatch) return cookieMatch[1];
+        
         return null;
       };
+
       const token = findToken();
-      if (!token) return { status: "No Token" };
+      if (!token) {
+        // If background claim fails to find token, we MUST redirect to UI mode 
+        // because the UI usually forces the token to load or shows the login screen.
+        console.warn("[STAKE-BOT] No token found in background. Redirecting to UI...");
+        window.location.href = `https://stake.com/settings/offers?currency=btc&type=drop&code=${dropCode}&channel=${dropChannel}&modal=redeemBonus`;
+        return { status: "No Token (Redirected)" };
+      }
       try {
         const query = `mutation ClaimBonusCode($code: String!, $currency: CurrencyEnum!, $turnstileToken: String!) {
           claimBonusCode(code: $code, currency: $currency, turnstileToken: $turnstileToken) { ip }
