@@ -2,15 +2,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const keyInput = document.getElementById('license-key');
   const saveBtn = document.getElementById('save-btn');
   const statusSpan = document.getElementById('conn-status');
+  const checkDaily = document.getElementById('check-daily');
+  const checkHigh = document.getElementById('check-high');
 
-  // Load existing key
-  chrome.storage.local.get(['licenseKey'], (res) => {
-    if (keyInput && res.licenseKey) {
-      keyInput.value = res.licenseKey;
-    }
+  // Load existing settings
+  chrome.storage.local.get(['licenseKey', 'monitorDaily', 'monitorHigh'], (res) => {
+    if (res.licenseKey) keyInput.value = res.licenseKey;
+    
+    // Default to true for daily if never set
+    checkDaily.checked = res.monitorDaily !== false;
+    checkHigh.checked = !!res.monitorHigh;
   });
 
-  // Save key and notify background
+  // Save key
   saveBtn.addEventListener('click', () => {
     const key = keyInput.value.trim();
     if (!key) return;
@@ -21,7 +25,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Periodically check status (Check if extension context is valid)
+  // Save toggles immediately on click
+  checkDaily.addEventListener('change', () => {
+    chrome.storage.local.set({ monitorDaily: checkDaily.checked });
+  });
+
+  checkHigh.addEventListener('change', () => {
+    chrome.storage.local.set({ monitorHigh: checkHigh.checked });
+  });
+
+  // Periodically check status
   const checkStatus = () => {
     try {
       chrome.runtime.sendMessage({ action: 'GET_STATUS' }, (response) => {

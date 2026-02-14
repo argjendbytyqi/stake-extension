@@ -4,12 +4,16 @@
   <style>
     body { width: 300px; font-family: sans-serif; padding: 15px; background: #0f212e; color: white; }
     h2 { color: #1475e1; margin-top: 0; }
-    input { width: 100%; padding: 8px; margin: 10px 0; border-radius: 4px; border: none; box-sizing: border-box; }
+    input[type="text"] { width: 100%; padding: 8px; margin: 10px 0; border-radius: 4px; border: none; box-sizing: border-box; }
     button { width: 100%; padding: 10px; background: #1475e1; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
     button:hover { background: #1a8bff; }
     .status { margin-top: 10px; font-size: 12px; }
     .status.on { color: #00e676; }
     .status.off { color: #ff5252; }
+    .settings { margin-top: 15px; border-top: 1px solid #243b4a; padding-top: 10px; }
+    .setting-item { display: flex; align-items: center; margin-bottom: 8px; font-size: 13px; }
+    .setting-item input { margin-right: 10px; }
+    .hint { font-size: 11px; color: #94a3b8; display: block; margin-top: -4px; margin-left: 24px; margin-bottom: 5px; }
   </style>
 </head>
 <body>
@@ -19,6 +23,21 @@
     <input type="text" id="license-key" placeholder="Enter key...">
     <button id="save-btn">Activate</button>
   </div>
+  
+  <div class="settings">
+    <div class="setting-item">
+      <input type="checkbox" id="check-daily" checked>
+      <label for="check-daily">Daily Drops (Low Wager)</label>
+    </div>
+    <span class="hint">Monitor @StakecomDailyDrops (2k-12k)</span>
+    
+    <div class="setting-item">
+      <input type="checkbox" id="check-high">
+      <label for="check-high">High Rollers (High Wager)</label>
+    </div>
+    <span class="hint">Monitor @stakecomhighrollers (50k-500k)</span>
+  </div>
+
   <div class="status">Status: <span id="conn-status" class="off">Disconnected</span></div>
   <script src="popup.js"></script>
 </body>
