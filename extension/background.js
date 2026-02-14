@@ -7,12 +7,20 @@ function connect() {
     if (!key) return;
 
     console.log("🔗 Connecting to server with key:", key);
-    // Replace with your EC2 IP
-    socket = new WebSocket(`ws://3.70.184.187:8000/ws/${key}`);
+    // Replace with your EC2 IP later
+    socket = new WebSocket(`ws://18.199.98.207:8000/ws/${key}`);
 
     socket.onopen = () => {
       isConnected = true;
       console.log("✅ Connected to Stake Broadcaster");
+      
+      // Heartbeat to keep connection alive and service worker awake
+      if (window.heartbeatInterval) clearInterval(window.heartbeatInterval);
+      window.heartbeatInterval = setInterval(() => {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send("ping");
+        }
+      }, 20000); // Every 20 seconds
     };
 
     socket.onmessage = async (event) => {
