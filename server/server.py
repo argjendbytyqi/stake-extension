@@ -5,9 +5,10 @@ import json
 import logging
 import threading
 import sqlite3
+import secrets
 import cv2
 import pytesseract
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from telethon import TelegramClient, events
@@ -29,22 +30,43 @@ DB_PATH = 'licenses.db'
 # --- DATABASE SETUP ---
 def init_db():
     conn = sqlite3.connect(DB_PATH)
+    # Added expires_at and created_at
     conn.execute('''CREATE TABLE IF NOT EXISTS licenses 
-                    (key TEXT PRIMARY KEY, status TEXT DEFAULT 'active', total_claims INTEGER DEFAULT 0)''')
+                    (key TEXT PRIMARY KEY, 
+                     status TEXT DEFAULT 'active', 
+                     total_claims INTEGER DEFAULT 0,
+                     created_at TEXT,
+                     expires_at TEXT)''')
     conn.execute('''CREATE TABLE IF NOT EXISTS history 
                     (time TEXT, key TEXT, channel TEXT, code TEXT, status TEXT)''')
     conn.commit()
     conn.close()
 
+def generate_key(days: int):
+    """Generates a unique key valid for X days."""
+    new_key = f"STAKE-{secrets.token_hex(4).upper()}-{secrets.token_hex(4).upper()}"
+    created_at = datetime.now()
+    expires_at = created_at + timedelta(days=days)
+    
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("INSERT INTO licenses (key, created_at, expires_at) VALUES (?, ?, ?)",
+                 (new_key, created_at.isoformat(), expires_at.isoformat()))
+    conn.commit()
+    conn.close()
+    return new_key
+
 def is_key_valid(key):
     conn = sqlite3.connect(DB_PATH)
-    res = conn.execute("SELECT status FROM licenses WHERE key = ? AND status = 'active'", (key,)).fetchone()
+    res = conn.execute("SELECT expires_at FROM licenses WHERE key = ? AND status = 'active'", (key,)).fetchone()
     conn.close()
-    return res is not None
+    if not res: return False
+    
+    expires_at = datetime.fromisoformat(res[0])
+    return datetime.now() < expires_at
 
 def log_claim(key, channel, code, status):
     conn = sqlite3.connect(DB_PATH)
-    now = datetime.now().strftime("%H:%M:%S")
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn.execute("INSERT INTO history VALUES (?, ?, ?, ?, ?)", (now, key, channel, code, status))
     conn.execute("UPDATE licenses SET total_claims = total_claims + 1 WHERE key = ?", (key,))
     conn.commit()
@@ -73,8 +95,7 @@ class ConnectionManager:
         for key in list(self.active_connections.keys()):
             try:
                 connection = self.active_connections.get(key)
-                if connection:
-                    asyncio.create_task(connection.send_text(message))
+                if connection: asyncio.create_task(connection.send_text(message))
             except: pass
 
 manager = ConnectionManager()
@@ -111,17 +132,13 @@ def run_telegram_worker(loop, broadcaster_manager):
             channel_name = getattr(chat, 'username', 'Unknown')
             text = (event.raw_text or "").replace('\n', ' ')
             codes = re.findall(r'stakecom[a-zA-Z0-9]+', text) or re.findall(r'\b[a-zA-Z0-9]{8,20}\b', text)
-            
             if not codes and event.media:
                 file_path = await event.download_media(file="temp_media")
                 media_text = extract_text_from_media(file_path)
                 codes = re.findall(r'stakecom[a-zA-Z0-9]+', media_text) or re.findall(r'\b[a-zA-Z0-9]{8,20}\b', media_text)
                 if os.path.exists(file_path): os.remove(file_path)
-
             valid_codes = [c for c in set(codes) if not c.isdigit() and 'telegram' not in c.lower()]
-            for code in valid_codes:
-                logger.info(f"🔥 NEW DROP [{channel_name}]: {code}")
-                asyncio.run_coroutine_threadsafe(broadcaster_manager.broadcast_drop(code, channel_name), main_loop)
+            for code in valid_codes: asyncio.run_coroutine_threadsafe(broadcaster_manager.broadcast_drop(code, channel_name), main_loop)
         except Exception as e: logger.error(f"❌ Telegram Event Error: {e}")
 
     async def main_worker():
@@ -161,11 +178,18 @@ app = FastAPI(lifespan=lifespan)
 async def admin_dashboard():
     conn = sqlite3.connect(DB_PATH)
     history = conn.execute("SELECT * FROM history ORDER BY rowid DESC LIMIT 20").fetchall()
-    total_db_claims = conn.execute("SELECT SUM(total_claims) FROM licenses").fetchone()[0] or 0
+    licenses = conn.execute("SELECT key, expires_at, total_claims FROM licenses").fetchall()
     conn.close()
 
     history_html = "".join([f"<tr><td>{h[0]}</td><td>{h[1]}</td><td>{h[2]}</td><td>{h[3]}</td><td>{h[4]}</td></tr>" for h in history])
-    users_html = "".join([f"<li>{key} <span style='color:#00e676'>● Online</span></li>" for key in manager.active_connections.keys()])
+    
+    licenses_html = ""
+    for l in licenses:
+        exp = datetime.fromisoformat(l[1]).strftime("%Y-%m-%d")
+        color = "#00e676" if datetime.now() < datetime.fromisoformat(l[1]) else "#ff5252"
+        status = manager.active_connections.get(l[0]) and "● Online" or "○ Offline"
+        status_color = manager.active_connections.get(l[0]) and "#00e676" or "#94a3b8"
+        licenses_html += f"<tr><td>{l[0]}</td><td style='color:{color}'>{exp}</td><td>{l[2]}</td><td style='color:{status_color}'>{status}</td></tr>"
     
     return f"""
     <html><head><title>Stake Bot Admin</title><style>
@@ -173,16 +197,34 @@ async def admin_dashboard():
         .card {{ background: #1a2c38; padding: 20px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #243b4a; }}
         table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
         th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #243b4a; }}
-        th {{ color: #1475e1; }} h1 {{ color: #1475e1; }} .stat {{ font-size: 24px; font-weight: bold; color: #00e676; }}
+        th {{ color: #1475e1; font-size: 12px; text-transform: uppercase; }}
+        h1, h2 {{ color: #1475e1; }} .stat {{ font-size: 24px; font-weight: bold; color: #00e676; }}
+        .btn {{ background: #1475e1; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; margin-right: 10px; display: inline-block; }}
     </style></head><body>
         <h1>Didier Drogba Broadcaster</h1>
-        <div style="display: flex; gap: 20px;">
-            <div class="card" style="flex: 1;"><h3>Status</h3><p>Total Database Claims: <span class="stat">{total_db_claims}</span></p></div>
-            <div class="card" style="flex: 1;"><h3>Active Extensions</h3><ul>{users_html or "No users connected"}</ul></div>
+        <div class="card">
+            <h2>Generate New License</h2>
+            <a href="/admin/generate/1" class="btn">1 Day</a>
+            <a href="/admin/generate/7" class="btn">7 Days</a>
+            <a href="/admin/generate/30" class="btn">30 Days</a>
+            <a href="/admin/generate/90" class="btn">90 Days</a>
+            <a href="/admin/generate/365" class="btn">1 Year</a>
         </div>
-        <div class="card"><h3>Recent Claim History</h3><table><tr><th>Time</th><th>User Key</th><th>Channel</th><th>Code</th><th>Status</th></tr>{history_html or "<tr><td colspan='5'>No claims recorded yet.</td></tr>"}</table></div>
-        <script>setTimeout(() => location.reload(), 5000);</script>
+        <div class="card">
+            <h2>Active Licenses</h2>
+            <table><tr><th>License Key</th><th>Expires At</th><th>Total Claims</th><th>Status</th></tr>{licenses_html}</table>
+        </div>
+        <div class="card">
+            <h2>Recent Claim History</h2>
+            <table><tr><th>Time</th><th>User Key</th><th>Channel</th><th>Code</th><th>Status</th></tr>{history_html}</table>
+        </div>
+        <script>setTimeout(() => location.reload(), 10000);</script>
     </body></html>"""
+
+@app.get("/admin/generate/{days}")
+async def admin_generate(days: int):
+    key = generate_key(days)
+    return HTMLResponse(f"<html><body style='background:#0f212e;color:white;font-family:sans-serif;padding:50px;'><h1>Key Generated!</h1><p style='font-size:24px;color:#00e676;'>{key}</p><br><a href='/' style='color:#1475e1;'>Back to Dashboard</a></body></html>")
 
 @app.websocket("/ws/{license_key}")
 async def websocket_endpoint(websocket: WebSocket, license_key: str):
