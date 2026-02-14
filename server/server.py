@@ -3,8 +3,9 @@ import os
 import re
 import json
 import logging
+import threading
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from telethon import TelegramClient, events
+from telethon import TelegramClient, events, sync
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 
@@ -39,77 +40,85 @@ class ConnectionManager:
     async def broadcast_drop(self, code: str, channel: str):
         logger.info(f"📡 [{channel}] Broadcasting code: {code} to {len(self.active_connections)} users")
         message = json.dumps({"type": "DROP", "code": code, "channel": channel})
-        for key, connection in self.active_connections.items():
+        
+        # Use a copy of keys to avoid modification errors during iteration
+        for key in list(self.active_connections.keys()):
             try:
-                await connection.send_text(message)
+                connection = self.active_connections.get(key)
+                if connection:
+                    # We use a non-blocking task for each send
+                    asyncio.create_task(connection.send_text(message))
             except:
                 pass
 
 manager = ConnectionManager()
 
-# --- TELEGRAM CLIENT ---
-# Initializing with a longer timeout for cloud stability
-client = TelegramClient('broadcaster_session', API_ID, API_HASH, connection_retries=None, request_retries=5)
+# --- TELEGRAM WORKER (THREADED) ---
+def run_telegram_worker(loop, broadcaster_manager):
+    """Runs in a separate thread to prevent FastAPI event loop blocking."""
+    asyncio.set_event_loop(loop)
+    
+    client = TelegramClient('broadcaster_session', API_ID, API_HASH)
 
-@client.on(events.NewMessage(chats=CHANNELS))
-async def handler(event):
-    try:
-        chat = await event.get_chat()
-        channel_name = getattr(chat, 'username', 'Unknown')
-        text = (event.raw_text or "").replace('\n', ' ')
-        codes = re.findall(r'stakecom[a-zA-Z0-9]+', text) or re.findall(r'\b[a-zA-Z0-9]{8,20}\b', text)
-        valid_codes = [c for c in set(codes) if not c.isdigit() and 'telegram' not in c.lower()]
-        for code in valid_codes:
-            logger.info(f"🔥 NEW DROP [{channel_name}]: {code}")
-            await manager.broadcast_drop(code, channel_name)
-    except Exception as e:
-        logger.error(f"❌ Event Handler Error: {e}")
+    @client.on(events.NewMessage(chats=CHANNELS))
+    async def handler(event):
+        try:
+            chat = await event.get_chat()
+            channel_name = getattr(chat, 'username', 'Unknown')
+            text = (event.raw_text or "").replace('\n', ' ')
+            codes = re.findall(r'stakecom[a-zA-Z0-9]+', text) or re.findall(r'\b[a-zA-Z0-9]{8,20}\b', text)
+            
+            valid_codes = [c for c in set(codes) if not c.isdigit() and 'telegram' not in c.lower()]
+            for code in valid_codes:
+                logger.info(f"🔥 NEW DROP [{channel_name}]: {code}")
+                # Schedule the broadcast in the MAIN FastAPI loop
+                asyncio.run_coroutine_threadsafe(
+                    broadcaster_manager.broadcast_drop(code, channel_name), 
+                    main_loop
+                )
+        except Exception as e:
+            logger.error(f"❌ Telegram Event Error: {e}")
 
-async def start_telegram():
-    logger.info("🚀 [STARTUP] Step 1: Connecting to Telegram (Direct Mode)...")
-    try:
-        # Use connect() + authorized check instead of start() to avoid hangs
-        await client.connect()
-        
-        logger.info("🚀 [STARTUP] Step 2: Handshake complete. Verifying session...")
-        if not await client.is_user_authorized():
-            logger.error("❌ [STARTUP] AUTH ERROR: Session invalid. Run login.py manually.")
-            return
-
-        # Force a simple request to ensure the pipe is open
-        me = await client.get_me()
-        logger.info(f"✅ [STARTUP] Telegram connection verified! Logged in as: {me.username}")
-        
-        # --- STARTUP TEST ---
-        logger.info("⏳ [TEST] Waiting for clients to connect before test broadcast...")
-        await asyncio.sleep(10)
-        
-        for channel in CHANNELS:
-            try:
+    async def main_worker():
+        logger.info("🚀 [TELEGRAM] Starting worker...")
+        try:
+            await client.start()
+            logger.info("✅ [TELEGRAM] Connection verified and authorized.")
+            
+            # Initial history check
+            for channel in CHANNELS:
                 async for message in client.iter_messages(channel, limit=1):
                     text = (message.text or "").replace('\n', ' ')
                     codes = re.findall(r'stakecom[a-zA-Z0-9]+', text) or re.findall(r'\b[a-zA-Z0-9]{8,20}\b', text)
                     valid = [c for c in set(codes) if not c.isdigit() and 'telegram' not in c.lower()]
                     if valid:
-                        logger.info(f"🧪 [TEST] Broadcasting latest from @{channel}: {valid[0]}")
-                        await manager.broadcast_drop(valid[0], channel)
-            except Exception as e:
-                logger.error(f"⚠️ [TEST] History check failed for {channel}: {e}")
-        
-        logger.info("📡 [TELEGRAM] Broadcaster is now fully operational.")
-        await client.run_until_disconnected()
-        
-    except Exception as e:
-        logger.error(f"❌ [STARTUP] Fatal Telegram Error: {e}")
+                        logger.info(f"🧪 [STARTUP] Found code in @{channel}: {valid[0]}")
+                        asyncio.run_coroutine_threadsafe(
+                            broadcaster_manager.broadcast_drop(valid[0], channel), 
+                            main_loop
+                        )
+
+            await client.run_until_disconnected()
+        except Exception as e:
+            logger.error(f"❌ [TELEGRAM] Worker Fatal Error: {e}")
+
+    loop.run_until_complete(main_worker())
 
 # --- LIFESPAN HANDLER ---
+main_loop = None
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    tg_task = asyncio.create_task(start_telegram())
+    global main_loop
+    main_loop = asyncio.get_running_loop()
+    
+    # Start Telegram in a dedicated thread
+    worker_loop = asyncio.new_event_loop()
+    worker_thread = threading.Thread(target=run_telegram_worker, args=(worker_loop, manager), daemon=True)
+    worker_thread.start()
+    
     yield
-    tg_task.cancel()
-    await client.disconnect()
-    logger.info("🛑 [SERVER] Shutdown complete.")
+    logger.info("🛑 [SERVER] Shutting down...")
 
 app = FastAPI(lifespan=lifespan)
 
