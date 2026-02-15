@@ -334,7 +334,10 @@ async def admin_dashboard(page: int = 1, search: str = "", username: str = Depen
             <a href="/admin/generate/365" class="btn">1 Year</a>
         </div>
         <div class="card">
-            <h2>Active Licenses</h2>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h2>Active Licenses</h2>
+                <a href="/admin/reset-history" class="btn" style="background:#ff5252; font-size:12px; padding:5px 10px;" onclick="return confirm('This will delete ALL claim history and reset counters to 0. Are you sure?')">Reset All History</a>
+            </div>
             <table><tr><th>License Key</th><th>Expires At</th><th>Total Claims</th><th>Status</th><th>Action</th></tr>{licenses_html}</table>
         </div>
         <div class="card">
@@ -355,6 +358,15 @@ async def admin_dashboard(page: int = 1, search: str = "", username: str = Depen
         </script>
         <button id="reload-btn" onclick="toggleReload()" class="btn" style="background:#334155;">Auto-Reload: {'ON' if not search else 'OFF'}</button>
     </body></html>"""
+
+@app.get("/admin/reset-history")
+async def admin_reset_history(username: str = Depends(authenticate)):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM history")
+    conn.execute("UPDATE licenses SET total_claims = 0")
+    conn.commit()
+    conn.close()
+    return HTMLResponse("<html><body style='background:#0f212e;color:white;font-family:sans-serif;padding:50px;'><h1>History Reset Successful</h1><p>All claim records have been deleted and license counters reset to 0.</p><br><a href='/' style='color:#1475e1;'>Back to Dashboard</a></body></html>")
 
 @app.get("/admin/delete/{license_key}")
 async def admin_delete(license_key: str, username: str = Depends(authenticate)):
