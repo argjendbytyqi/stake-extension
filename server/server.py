@@ -107,14 +107,14 @@ class ConnectionManager:
         if key in self.active_connections:
             old_ws = self.active_connections[key]
             try:
-                # Try to ping the old connection to see if it's actually alive
-                await old_ws.send_text(json.dumps({"type": "ping"}))
+                # Use a small timeout for the check to avoid blocking
+                await asyncio.wait_for(old_ws.send_text(json.dumps({"type": "ping"})), timeout=0.5)
                 logger.warning(f"🚫 Connection rejected: {key} is already active")
                 await websocket.close(code=4003, reason="License already in use")
                 return False
-            except:
-                # Old connection is dead, clean it up
-                logger.info(f"♻️ Cleaning up stale connection for {key}")
+            except Exception as e:
+                # Old connection is dead or timed out, clean it up
+                logger.info(f"♻️ Cleaning up stale connection for {key} (Reason: {e})")
                 self.disconnect(key)
             
         await websocket.accept()
