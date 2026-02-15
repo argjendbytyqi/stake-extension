@@ -102,9 +102,16 @@ class ConnectionManager:
         self.active_connections: dict[str, WebSocket] = {}
 
     async def connect(self, key: str, websocket: WebSocket):
+        # OPTION B: Reject new connection if key is already online
+        if key in self.active_connections:
+            logger.warning(f"🚫 Connection rejected: {key} is already online")
+            await websocket.close(code=4003, reason="License already in use")
+            return False
+            
         await websocket.accept()
         self.active_connections[key] = websocket
         logger.info(f"➕ User connected: {key}")
+        return True
 
     def disconnect(self, key: str):
         if key in self.active_connections:
@@ -277,7 +284,10 @@ async def websocket_endpoint(websocket: WebSocket, license_key: str):
     if not is_key_valid(license_key):
         await websocket.close(code=4003)
         return
-    await manager.connect(license_key, websocket)
+        
+    if not await manager.connect(license_key, websocket):
+        return
+
     try:
         while True:
             data = await websocket.receive_text()
@@ -296,7 +306,9 @@ async def websocket_endpoint_token(websocket: WebSocket, token: str = Query(...)
         await websocket.close(code=4003)
         return
 
-    await manager.connect(license_key, websocket)
+    if not await manager.connect(license_key, websocket):
+        return
+
     try:
         while True:
             data = await websocket.receive_text()
