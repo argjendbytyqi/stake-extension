@@ -79,9 +79,16 @@ def create_access_token(data: dict):
 def log_claim(key, channel, code, status):
     conn = sqlite3.connect(DB_PATH)
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    conn.execute("INSERT INTO history VALUES (?, ?, ?, ?, ?)", (now, key, channel, code, status))
-    conn.execute("UPDATE licenses SET total_claims = total_claims + 1 WHERE key = ?", (key,))
-    conn.commit()
+    
+    # Check if this specific code was already successfully claimed by ANYONE
+    # Or if this specific license already has an entry for this code
+    existing = conn.execute("SELECT 1 FROM history WHERE code = ? AND (status = 'Success' OR key = ?)", (code, key)).fetchone()
+    
+    if not existing:
+        conn.execute("INSERT INTO history VALUES (?, ?, ?, ?, ?)", (now, key, channel, code, status))
+        if status == 'Success':
+            conn.execute("UPDATE licenses SET total_claims = total_claims + 1 WHERE key = ?", (key,))
+        conn.commit()
     conn.close()
 
 init_db()
@@ -285,7 +292,7 @@ async def admin_dashboard(username: str = Depends(authenticate)):
         color = "#00e676" if datetime.now() < datetime.fromisoformat(l[1]) else "#ff5252"
         status = manager.active_connections.get(l[0]) and "● Online" or "○ Offline"
         status_color = manager.active_connections.get(l[0]) and "#00e676" or "#94a3b8"
-        licenses_html += f"<tr><td>{l[0]}</td><td style='color:{color}'>{exp}</td><td>{l[2]}</td><td style='color:{status_color}'>{status}</td></tr>"
+        licenses_html += f"<tr><td>{l[0]}</td><td style='color:{color}'>{exp}</td><td>{l[2]}</td><td style='color:{status_color}'>{status}</td><td><a href='/admin/delete/{l[0]}' style='color:#ff5252; text-decoration:none;' onclick='return confirm(\"Are you sure?\")'>Delete</a></td></tr>"
     
     return f"""
     <html><head><title>Stake Bot Admin</title><style>
@@ -308,7 +315,7 @@ async def admin_dashboard(username: str = Depends(authenticate)):
         </div>
         <div class="card">
             <h2>Active Licenses</h2>
-            <table><tr><th>License Key</th><th>Expires At</th><th>Total Claims</th><th>Status</th></tr>{licenses_html}</table>
+            <table><tr><th>License Key</th><th>Expires At</th><th>Total Claims</th><th>Status</th><th>Action</th></tr>{licenses_html}</table>
         </div>
         <div class="card">
             <h2>Recent Claim History</h2>
@@ -321,6 +328,14 @@ async def admin_dashboard(username: str = Depends(authenticate)):
         </script>
         <button id="reload-btn" onclick="toggleReload()" class="btn" style="background:#334155;">Auto-Reload: ON</button>
     </body></html>"""
+
+@app.get("/admin/delete/{license_key}")
+async def admin_delete(license_key: str, username: str = Depends(authenticate)):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM licenses WHERE key = ?", (license_key,))
+    conn.commit()
+    conn.close()
+    return HTMLResponse("<html><body style='background:#0f212e;color:white;font-family:sans-serif;padding:50px;'><h1>License Deleted</h1><br><a href='/' style='color:#1475e1;'>Back to Dashboard</a></body></html>")
 
 @app.get("/admin/generate/{days}")
 async def admin_generate(days: int, username: str = Depends(authenticate)):
