@@ -106,20 +106,29 @@ class ConnectionManager:
         # OPTION B IMPROVED: Check if connection is actually alive
         if key in self.active_connections:
             old_ws = self.active_connections[key]
-            try:
-                # Use a small timeout for the check to avoid blocking
-                await asyncio.wait_for(old_ws.send_text(json.dumps({"type": "ping"})), timeout=0.3)
-                logger.warning(f"🚫 Connection rejected: {key} is already active")
-                # Try to accept and then close to provide a clear error message to the client
-                await websocket.accept()
-                await websocket.send_text(json.dumps({"type": "ERROR", "message": "License already in use"}))
-                await websocket.close(code=4003)
-                return False
-            except Exception as e:
-                # Old connection is dead or timed out, clean it up
-                logger.info(f"♻️ Cleaning up stale connection for {key}")
-                if key in self.active_connections:
-                    del self.active_connections[key]
+            
+            # If the new connection is from the SAME IP as the old one,
+            # we assume the user refreshed their tab and we let them in.
+            if websocket.client.host == old_ws.client.host:
+                logger.info(f"♻️ Auto-refreshing connection for {key} from same IP")
+                try: await old_ws.close()
+                except: pass
+                if key in self.active_connections: del self.active_connections[key]
+            else:
+                try:
+                    # Use a small timeout for the check to avoid blocking
+                    await asyncio.wait_for(old_ws.send_text(json.dumps({"type": "ping"})), timeout=0.3)
+                    logger.warning(f"🚫 Connection rejected: {key} is already active on another device")
+                    # Try to accept and then close to provide a clear error message to the client
+                    await websocket.accept()
+                    await websocket.send_text(json.dumps({"type": "ERROR", "message": "License already in use"}))
+                    await websocket.close(code=4003)
+                    return False
+                except Exception as e:
+                    # Old connection is dead or timed out, clean it up
+                    logger.info(f"♻️ Cleaning up stale connection for {key}")
+                    if key in self.active_connections:
+                        del self.active_connections[key]
             
         await websocket.accept()
         self.active_connections[key] = websocket
