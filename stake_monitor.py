@@ -6,7 +6,7 @@ import random
 import pytesseract
 from telethon import TelegramClient, events
 from playwright.async_api import async_playwright
-from playwright_stealth import stealth_async
+import playwright_stealth
 
 # --- CONFIGURATION ---
 API_ID = 39003063
@@ -74,7 +74,7 @@ async def claim_code(code):
             
             if not page:
                 page = await context.new_page()
-                await stealth_async(page)
+                await playwright_stealth.stealth_async(page)
 
             direct_url = f"https://stake.com/settings/offers?type=drop&code={code}&modal=redeemBonus"
             print(f"🔗 Strike URL: {direct_url}")
