@@ -221,6 +221,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 connect();
 
+// Tab Manager: Ensures only one Stake tab stays open
+chrome.tabs.onCreated.addListener(async (newTab) => {
+  if (!newTab.url && !newTab.pendingUrl) return;
+  const url = newTab.url || newTab.pendingUrl;
+  
+  if (url.includes("stake.com") || url.includes("stake.us")) {
+    const tabs = await chrome.tabs.query({ url: ["*://stake.com/*", "*://stake.us/*", "*://*.stake.com/*"] });
+    // If we have more than 1 stake tab, close the OLDER ones
+    if (tabs.length > 1) {
+      const tabsToRemove = tabs
+        .filter(t => t.id !== newTab.id)
+        .map(t => t.id);
+      chrome.tabs.remove(tabsToRemove);
+      console.log(`[StakePeek] Closed ${tabsToRemove.length} duplicate Stake tabs.`);
+    }
+  }
+});
+
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && tab.url && tab.url.includes('modal=redeemBonus')) {
     const url = new URL(tab.url);

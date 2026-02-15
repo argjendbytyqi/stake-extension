@@ -314,7 +314,7 @@ async def admin_dashboard(page: int = 1, search: str = "", username: str = Depen
         licenses_html += f"<tr><td>{l[0]}</td><td style='color:{color}'>{exp}</td><td>{l[2]}</td><td style='color:{status_color}'>{status}</td><td><a href='/admin/delete/{l[0]}' style='color:#ff5252; text-decoration:none;' onclick='return confirm(\"Are you sure?\")'>Delete</a></td></tr>"
     
     return f"""
-    <html><head><title>Stake Bot Admin</title><style>
+    <html><head><title>StakePeek Admin</title><style>
         body {{ font-family: sans-serif; background: #0f212e; color: white; padding: 40px; }}
         .card {{ background: #1a2c38; padding: 20px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #243b4a; }}
         table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
@@ -324,7 +324,7 @@ async def admin_dashboard(page: int = 1, search: str = "", username: str = Depen
         .btn {{ background: #1475e1; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; margin-right: 10px; display: inline-block; }}
         input[type="text"] {{ background: #0f212e; border: 1px solid #243b4a; color: white; padding: 8px; border-radius: 5px; width: 300px; }}
     </style></head><body>
-        <h1>Didier Drogba Broadcaster</h1>
+        <h1>StakePeek Broadcaster</h1>
         <div class="card">
             <h2>Generate New License</h2>
             <a href="/admin/generate/1" class="btn">1 Day</a>
