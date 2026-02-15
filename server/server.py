@@ -231,8 +231,8 @@ async def admin_dashboard():
         </div>
         <script>
             let autoReload = true;
-            setInterval(() => { if(autoReload) location.reload(); }, 15000);
-            function toggleReload() { autoReload = !autoReload; document.getElementById('reload-btn').innerText = autoReload ? 'Auto-Reload: ON' : 'Auto-Reload: OFF'; }
+            setInterval(() => {{ if(autoReload) location.reload(); }}, 15000);
+            function toggleReload() {{ autoReload = !autoReload; document.getElementById('reload-btn').innerText = autoReload ? 'Auto-Reload: ON' : 'Auto-Reload: OFF'; }}
         </script>
         <button id="reload-btn" onclick="toggleReload()" class="btn" style="background:#334155;">Auto-Reload: ON</button>
     </body></html>"""
