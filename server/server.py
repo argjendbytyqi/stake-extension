@@ -278,14 +278,33 @@ app.add_middleware(
 
 # --- ROUTES ---
 @app.get("/", response_class=HTMLResponse)
-async def admin_dashboard(username: str = Depends(authenticate)):
+async def admin_dashboard(page: int = 1, search: str = "", username: str = Depends(authenticate)):
     conn = sqlite3.connect(DB_PATH)
-    history = conn.execute("SELECT * FROM history ORDER BY rowid DESC LIMIT 20").fetchall()
+    limit = 10
+    offset = (page - 1) * limit
+    
+    # History with pagination and search
+    query = "SELECT * FROM history"
+    params = []
+    if search:
+        query += " WHERE key LIKE ? OR code LIKE ? OR channel LIKE ? OR status LIKE ?"
+        params = [f"%{search}%"] * 4
+    
+    total_rows = conn.execute(f"SELECT COUNT(*) FROM ({query})", params).fetchone()[0]
+    total_pages = (total_rows + limit - 1) // limit
+    
+    history = conn.execute(f"{query} ORDER BY rowid DESC LIMIT ? OFFSET ?", params + [limit, offset]).fetchall()
     licenses = conn.execute("SELECT key, expires_at, total_claims FROM licenses").fetchall()
     conn.close()
 
     history_html = "".join([f"<tr><td>{h[0]}</td><td>{h[1]}</td><td>{h[2]}</td><td>{h[3]}</td><td>{h[4]}</td></tr>" for h in history])
     
+    pagination_html = f"<div style='margin-top:10px;'>"
+    if page > 1: pagination_html += f"<a href='/?page={page-1}&search={search}' class='btn' style='padding:5px 10px; font-size:12px;'>Previous</a>"
+    pagination_html += f"<span style='margin: 0 15px;'>Page {page} of {total_pages}</span>"
+    if page < total_pages: pagination_html += f"<a href='/?page={page+1}&search={search}' class='btn' style='padding:5px 10px; font-size:12px;'>Next</a>"
+    pagination_html += "</div>"
+
     licenses_html = ""
     for l in licenses:
         exp = datetime.fromisoformat(l[1]).strftime("%Y-%m-%d")
@@ -303,6 +322,7 @@ async def admin_dashboard(username: str = Depends(authenticate)):
         th {{ color: #1475e1; font-size: 12px; text-transform: uppercase; }}
         h1, h2 {{ color: #1475e1; }} .stat {{ font-size: 24px; font-weight: bold; color: #00e676; }}
         .btn {{ background: #1475e1; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; margin-right: 10px; display: inline-block; }}
+        input[type="text"] {{ background: #0f212e; border: 1px solid #243b4a; color: white; padding: 8px; border-radius: 5px; width: 300px; }}
     </style></head><body>
         <h1>Didier Drogba Broadcaster</h1>
         <div class="card">
@@ -318,15 +338,22 @@ async def admin_dashboard(username: str = Depends(authenticate)):
             <table><tr><th>License Key</th><th>Expires At</th><th>Total Claims</th><th>Status</th><th>Action</th></tr>{licenses_html}</table>
         </div>
         <div class="card">
-            <h2>Recent Claim History</h2>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h2>Recent Claim History</h2>
+                <form action="/" method="get">
+                    <input type="text" name="search" placeholder="Search by Key, Code, Status..." value="{search}">
+                    <button type="submit" class="btn" style="padding:8px 15px;">Search</button>
+                </form>
+            </div>
             <table><tr><th>Time</th><th>User Key</th><th>Channel</th><th>Code</th><th>Status</th></tr>{history_html}</table>
+            {pagination_html}
         </div>
         <script>
-            let autoReload = true;
+            let autoReload = {str(not bool(search)).lower()};
             setInterval(() => {{ if(autoReload) location.reload(); }}, 15000);
             function toggleReload() {{ autoReload = !autoReload; document.getElementById('reload-btn').innerText = autoReload ? 'Auto-Reload: ON' : 'Auto-Reload: OFF'; }}
         </script>
-        <button id="reload-btn" onclick="toggleReload()" class="btn" style="background:#334155;">Auto-Reload: ON</button>
+        <button id="reload-btn" onclick="toggleReload()" class="btn" style="background:#334155;">Auto-Reload: {'ON' if not search else 'OFF'}</button>
     </body></html>"""
 
 @app.get("/admin/delete/{license_key}")
