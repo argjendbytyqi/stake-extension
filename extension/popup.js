@@ -82,12 +82,12 @@ document.addEventListener('DOMContentLoaded', () => {
       chrome.runtime.sendMessage({ action: 'GET_STATUS' }, (response) => {
         if (chrome.runtime.lastError) return;
         if (response && response.connected) {
-          statusSpan.textContent = '● Online';
+          statusSpan.textContent = 'Online';
           statusSpan.className = 'on';
           saveBtn.textContent = 'License Active';
           saveBtn.style.background = '#00e676'; // Green when active
         } else {
-          statusSpan.textContent = '● Offline';
+          statusSpan.textContent = 'Offline';
           statusSpan.className = 'off';
           saveBtn.style.background = '#1475e1'; // Reset to blue
         }

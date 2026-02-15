@@ -10,6 +10,7 @@
     .status { margin-top: 10px; font-size: 12px; }
     .status.on { color: #00e676; }
     .status.off { color: #ff5252; }
+    #conn-status::before { content: "● "; }
     .settings { margin-top: 15px; border-top: 1px solid #243b4a; padding-top: 10px; }
     .setting-item { display: flex; align-items: center; margin-bottom: 8px; font-size: 13px; }
     .setting-item input { margin-right: 10px; }
@@ -21,7 +22,7 @@
   <div id="license-section">
     <div style="display: flex; justify-content: space-between; align-items: center;">
       <label style="font-size: 12px; color: #94a3b8;">LICENSE KEY</label>
-      <span id="conn-status" class="off" style="font-size: 11px; font-weight: bold;">● Disconnected</span>
+      <span id="conn-status" class="off" style="font-size: 11px; font-weight: bold;">Offline</span>
     </div>
     <input type="text" id="license-key" placeholder="STAKE-XXXX-XXXX">
     <div id="license-info" style="display: none; margin-bottom: 10px; font-size: 11px; color: #94a3b8;">
