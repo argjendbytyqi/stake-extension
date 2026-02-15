@@ -11,48 +11,60 @@ function connect() {
     const key = res.licenseKey;
     if (!key) return;
 
-    socket = new WebSocket(`ws://18.199.98.207:8000/ws/${key}`);
+    // 1. Get a short-lived JWT token using the license key
+    fetch(`http://18.199.98.207:8000/auth/token?license_key=${key}`)
+      .then(r => r.json())
+      .then(data => {
+        if (!data.token) return;
 
-    socket.onopen = () => {
-      isConnected = true;
-      console.log("✅ Connected to Stake Broadcaster");
-      setupAFK();
-      const scheduleNextPing = () => {
-        setTimeout(() => {
-          if (socket && socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({ type: "ping" }));
-            console.log("📤 WebSocket Ping Sent");
-            scheduleNextPing();
-          }
-        }, 25000);
-      };
-      scheduleNextPing();
-    };
+        // 2. Connect to WebSocket using the token
+        socket = new WebSocket(`ws://18.199.98.207:8000/ws?token=${data.token}`);
 
-    socket.onmessage = async (event) => {
-      if (event.data === "pong") return;
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === "DROP") {
-          console.log(`📡 Signal: ${data.channel} -> ${data.code}`);
-          
-          chrome.storage.local.get(['monitorDaily', 'monitorHigh'], async (prefs) => {
-            const isDaily = data.channel === 'StakecomDailyDrops';
-            const isHigh = data.channel === 'stakecomhighrollers';
-            if ((isDaily && prefs.monitorDaily !== false) || (isHigh && prefs.monitorHigh === true)) {
-              dropQueue.push({ code: data.code, channel: data.channel });
-              processQueue();
+        socket.onopen = () => {
+          isConnected = true;
+          console.log("✅ Connected to Stake Broadcaster (via Token)");
+          setupAFK();
+          const scheduleNextPing = () => {
+            setTimeout(() => {
+              if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({ type: "ping" }));
+                console.log("📤 WebSocket Ping Sent");
+                scheduleNextPing();
+              }
+            }, 25000);
+          };
+          scheduleNextPing();
+        };
+
+        socket.onmessage = async (event) => {
+          if (event.data === "pong") return;
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === "DROP") {
+              console.log(`📡 Signal: ${data.channel} -> ${data.code}`);
+              
+              chrome.storage.local.get(['monitorDaily', 'monitorHigh'], async (prefs) => {
+                const isDaily = data.channel === 'StakecomDailyDrops';
+                const isHigh = data.channel === 'stakecomhighrollers';
+                if ((isDaily && prefs.monitorDaily !== false) || (isHigh && prefs.monitorHigh === true)) {
+                  dropQueue.push({ code: data.code, channel: data.channel });
+                  processQueue();
+                }
+              });
             }
-          });
-        }
-      } catch (e) {}
-    };
+          } catch (e) {}
+        };
 
-    socket.onclose = () => {
-      isConnected = false;
-      if (afkTimer) clearInterval(afkTimer);
-      setTimeout(connect, 10000);
-    };
+        socket.onclose = () => {
+          isConnected = false;
+          if (afkTimer) clearInterval(afkTimer);
+          setTimeout(connect, 10000);
+        };
+      })
+      .catch(e => {
+        console.error("Auth error:", e);
+        setTimeout(connect, 10000);
+      });
   });
 }
 

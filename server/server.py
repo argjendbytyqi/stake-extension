@@ -8,8 +8,9 @@ import sqlite3
 import secrets
 import cv2
 import pytesseract
+import jwt
 from datetime import datetime, timedelta
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, status
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, status, Query
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.responses import HTMLResponse
 from telethon import TelegramClient, events
@@ -28,6 +29,8 @@ API_HASH = os.getenv("TG_API_HASH", "b19980f250f5053c4be259bb05668a35")
 CHANNELS = ['StakecomDailyDrops', 'stakecomhighrollers']
 DB_PATH = 'licenses.db'
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "change-me-immediately")
+JWT_SECRET = os.getenv("JWT_SECRET", secrets.token_hex(32))
+ALGORITHM = "HS256"
 
 # --- DATABASE SETUP ---
 def init_db():
@@ -65,6 +68,12 @@ def is_key_valid(key):
     
     expires_at = datetime.fromisoformat(res[0])
     return datetime.now() < expires_at
+
+def create_access_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(hours=24)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, JWT_SECRET, algorithm=ALGORITHM)
 
 def log_claim(key, channel, code, status):
     conn = sqlite3.connect(DB_PATH)
@@ -255,11 +264,23 @@ async def admin_generate(days: int, username: str = Depends(authenticate)):
     key = generate_key(days)
     return HTMLResponse(f"<html><body style='background:#0f212e;color:white;font-family:sans-serif;padding:50px;'><h1>Key Generated!</h1><p style='font-size:24px;color:#00e676;'>{key}</p><br><a href='/' style='color:#1475e1;'>Back to Dashboard</a></body></html>")
 
-@app.websocket("/ws/{license_key}")
-async def websocket_endpoint(websocket: WebSocket, license_key: str):
+@app.get("/auth/token")
+async def get_token(license_key: str):
     if not is_key_valid(license_key):
+        raise HTTPException(status_code=403, detail="Invalid or expired license key")
+    token = create_access_token(data={"sub": license_key})
+    return {"token": token}
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
+        license_key = payload.get("sub")
+        if license_key is None: raise Exception("Invalid token")
+    except:
         await websocket.close(code=4003)
         return
+
     await manager.connect(license_key, websocket)
     try:
         while True:
