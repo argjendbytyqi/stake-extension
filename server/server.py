@@ -11,6 +11,7 @@ import pytesseract
 import jwt
 from datetime import datetime, timedelta
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, status, Query
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.responses import HTMLResponse
 from telethon import TelegramClient, events
@@ -220,6 +221,15 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(lifespan=lifespan)
+
+# --- CORS SETTINGS ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins (required for Chrome Extensions)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # --- ROUTES ---
 @app.get("/", response_class=HTMLResponse)
