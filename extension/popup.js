@@ -4,10 +4,18 @@ document.addEventListener('DOMContentLoaded', () => {
   const statusSpan = document.getElementById('conn-status');
   const checkDaily = document.getElementById('check-daily');
   const checkHigh = document.getElementById('check-high');
+  const licenseInfo = document.getElementById('license-info');
+  const expireDate = document.getElementById('expire-date');
 
   // Load existing settings
-  chrome.storage.local.get(['licenseKey', 'monitorDaily', 'monitorHigh'], (res) => {
-    if (res.licenseKey) keyInput.value = res.licenseKey;
+  chrome.storage.local.get(['licenseKey', 'monitorDaily', 'monitorHigh', 'expireAt'], (res) => {
+    if (res.licenseKey) {
+      keyInput.value = res.licenseKey;
+      if (res.expireAt) {
+        licenseInfo.style.display = 'block';
+        expireDate.textContent = new Date(res.expireAt).toLocaleDateString();
+      }
+    }
     
     // Default to true for daily if never set
     checkDaily.checked = res.monitorDaily !== false;
@@ -18,11 +26,41 @@ document.addEventListener('DOMContentLoaded', () => {
   saveBtn.addEventListener('click', () => {
     const key = keyInput.value.trim();
     if (!key) return;
-    chrome.storage.local.set({ licenseKey: key }, () => {
-      chrome.runtime.sendMessage({ action: 'RECONNECT' });
-      saveBtn.textContent = 'Connecting...';
-      setTimeout(() => { saveBtn.textContent = 'Activate'; }, 2000);
-    });
+    
+    saveBtn.textContent = 'Verifying...';
+    
+    // Fetch license info from server
+    fetch(`http://18.199.98.207:8000/auth/token?license_key=${key}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.token) {
+          // Decode JWT to get expiry (sub is key, exp is timestamp)
+          const payload = JSON.parse(atob(data.token.split('.')[1]));
+          const expiry = new Date(payload.exp * 1000).toISOString();
+          
+          chrome.storage.local.set({ 
+            licenseKey: key,
+            expireAt: expiry
+          }, () => {
+            chrome.runtime.sendMessage({ action: 'RECONNECT' });
+            licenseInfo.style.display = 'block';
+            expireDate.textContent = new Date(expiry).toLocaleDateString();
+            saveBtn.textContent = 'License Active';
+            setTimeout(() => { saveBtn.textContent = 'Update License'; }, 2000);
+          });
+        } else {
+          saveBtn.textContent = 'Invalid Key';
+          saveBtn.style.background = '#ff5252';
+          setTimeout(() => { 
+            saveBtn.textContent = 'Activate License'; 
+            saveBtn.style.background = '#1475e1';
+          }, 2000);
+        }
+      })
+      .catch(() => {
+        saveBtn.textContent = 'Server Error';
+        setTimeout(() => { saveBtn.textContent = 'Activate License'; }, 2000);
+      });
   });
 
   // Save toggles immediately on click
@@ -40,10 +78,11 @@ document.addEventListener('DOMContentLoaded', () => {
       chrome.runtime.sendMessage({ action: 'GET_STATUS' }, (response) => {
         if (chrome.runtime.lastError) return;
         if (response && response.connected) {
-          statusSpan.textContent = 'Active & Waiting';
+          statusSpan.textContent = '● Online';
           statusSpan.className = 'on';
+          saveBtn.textContent = 'License Active';
         } else {
-          statusSpan.textContent = 'Disconnected';
+          statusSpan.textContent = '● Offline';
           statusSpan.className = 'off';
         }
       });

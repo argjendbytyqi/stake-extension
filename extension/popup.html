@@ -19,9 +19,15 @@
 <body>
   <h2>Stake Claimer</h2>
   <div id="license-section">
-    <label>License Key:</label>
-    <input type="text" id="license-key" placeholder="Enter key...">
-    <button id="save-btn">Activate</button>
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <label style="font-size: 12px; color: #94a3b8;">LICENSE KEY</label>
+      <span id="conn-status" class="off" style="font-size: 11px; font-weight: bold;">● Disconnected</span>
+    </div>
+    <input type="text" id="license-key" placeholder="STAKE-XXXX-XXXX">
+    <div id="license-info" style="display: none; margin-bottom: 10px; font-size: 11px; color: #94a3b8;">
+      Expires: <span id="expire-date" style="color: #00e676;">--</span>
+    </div>
+    <button id="save-btn">Activate License</button>
   </div>
   
   <div class="settings">
@@ -38,7 +44,7 @@
     <span class="hint">Monitor @stakecomhighrollers (50k-500k)</span>
   </div>
 
-  <div class="status">Status: <span id="conn-status" class="off">Disconnected</span></div>
+  <div class="status" style="display:none;">Status: <span id="conn-status" class="off">Disconnected</span></div>
   <script src="popup.js"></script>
 </body>
 </html>
