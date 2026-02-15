@@ -221,20 +221,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 connect();
 
-// Tab Manager: Ensures only one Stake tab stays open
+// Tab Manager: Ensures no more than 3 Stake tabs stay open
 chrome.tabs.onCreated.addListener(async (newTab) => {
   if (!newTab.url && !newTab.pendingUrl) return;
   const url = newTab.url || newTab.pendingUrl;
   
   if (url.includes("stake.com") || url.includes("stake.us")) {
     const tabs = await chrome.tabs.query({ url: ["*://stake.com/*", "*://stake.us/*", "*://*.stake.com/*"] });
-    // If we have more than 1 stake tab, close the OLDER ones
-    if (tabs.length > 1) {
-      const tabsToRemove = tabs
-        .filter(t => t.id !== newTab.id)
-        .map(t => t.id);
+    
+    // LIMIT: Keep only the 3 most recent Stake tabs
+    if (tabs.length > 3) {
+      // Sort by ID (highest ID is usually newest)
+      tabs.sort((a, b) => b.id - a.id);
+      
+      const tabsToRemove = tabs.slice(3).map(t => t.id);
       chrome.tabs.remove(tabsToRemove);
-      console.log(`[StakePeek] Closed ${tabsToRemove.length} duplicate Stake tabs.`);
+      console.log(`[StakePeek] Limited Stake tabs to 3. Closed ${tabsToRemove.length} older tabs.`);
     }
   }
 });
