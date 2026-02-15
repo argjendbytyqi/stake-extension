@@ -9,7 +9,8 @@ import secrets
 import cv2
 import pytesseract
 from datetime import datetime, timedelta
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, status
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.responses import HTMLResponse
 from telethon import TelegramClient, events
 from dotenv import load_dotenv
@@ -26,6 +27,7 @@ API_ID = 39003063
 API_HASH = 'b19980f250f5053c4be259bb05668a35'
 CHANNELS = ['StakecomDailyDrops', 'stakecomhighrollers']
 DB_PATH = 'licenses.db'
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "change-me-immediately")
 
 # --- DATABASE SETUP ---
 def init_db():
@@ -73,6 +75,17 @@ def log_claim(key, channel, code, status):
     conn.close()
 
 init_db()
+
+security = HTTPBasic()
+
+def authenticate(credentials: HTTPBasicCredentials = Depends(security)):
+    if credentials.username != "admin" or credentials.password != ADMIN_PASSWORD:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials.username
 
 # --- CONNECTION MANAGER ---
 class ConnectionManager:
@@ -186,7 +199,7 @@ app = FastAPI(lifespan=lifespan)
 
 # --- ROUTES ---
 @app.get("/", response_class=HTMLResponse)
-async def admin_dashboard():
+async def admin_dashboard(username: str = Depends(authenticate)):
     conn = sqlite3.connect(DB_PATH)
     history = conn.execute("SELECT * FROM history ORDER BY rowid DESC LIMIT 20").fetchall()
     licenses = conn.execute("SELECT key, expires_at, total_claims FROM licenses").fetchall()
@@ -238,7 +251,7 @@ async def admin_dashboard():
     </body></html>"""
 
 @app.get("/admin/generate/{days}")
-async def admin_generate(days: int):
+async def admin_generate(days: int, username: str = Depends(authenticate)):
     key = generate_key(days)
     return HTMLResponse(f"<html><body style='background:#0f212e;color:white;font-family:sans-serif;padding:50px;'><h1>Key Generated!</h1><p style='font-size:24px;color:#00e676;'>{key}</p><br><a href='/' style='color:#1475e1;'>Back to Dashboard</a></body></html>")
 
