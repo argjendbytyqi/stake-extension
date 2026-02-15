@@ -81,9 +81,11 @@ document.addEventListener('DOMContentLoaded', () => {
           statusSpan.textContent = '● Online';
           statusSpan.className = 'on';
           saveBtn.textContent = 'License Active';
+          saveBtn.style.background = '#00e676'; // Green when active
         } else {
           statusSpan.textContent = '● Offline';
           statusSpan.className = 'off';
+          saveBtn.style.background = '#1475e1'; // Reset to blue
         }
       });
     } catch (e) {}
