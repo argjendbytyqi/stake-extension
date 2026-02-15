@@ -271,8 +271,23 @@ async def get_token(license_key: str):
     token = create_access_token(data={"sub": license_key})
     return {"token": token}
 
+@app.websocket("/ws/{license_key}")
+async def websocket_endpoint(websocket: WebSocket, license_key: str):
+    # FALLBACK: Support old direct license key connection for existing users
+    if not is_key_valid(license_key):
+        await websocket.close(code=4003)
+        return
+    await manager.connect(license_key, websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            msg = json.loads(data)
+            if msg.get("type") == "REPORT":
+                log_claim(license_key, msg.get("channel"), msg.get("code"), msg.get("status"))
+    except: manager.disconnect(license_key)
+
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
+async def websocket_endpoint_token(websocket: WebSocket, token: str = Query(...)):
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
         license_key = payload.get("sub")
