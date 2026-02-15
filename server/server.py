@@ -229,7 +229,12 @@ async def admin_dashboard():
             <h2>Recent Claim History</h2>
             <table><tr><th>Time</th><th>User Key</th><th>Channel</th><th>Code</th><th>Status</th></tr>{history_html}</table>
         </div>
-        <script>setTimeout(() => location.reload(), 10000);</script>
+        <script>
+            let autoReload = true;
+            setInterval(() => { if(autoReload) location.reload(); }, 15000);
+            function toggleReload() { autoReload = !autoReload; document.getElementById('reload-btn').innerText = autoReload ? 'Auto-Reload: ON' : 'Auto-Reload: OFF'; }
+        </script>
+        <button id="reload-btn" onclick="toggleReload()" class="btn" style="background:#334155;">Auto-Reload: ON</button>
     </body></html>"""
 
 @app.get("/admin/generate/{days}")
