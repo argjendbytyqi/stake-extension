@@ -102,11 +102,19 @@ class ConnectionManager:
         self.active_connections: dict[str, WebSocket] = {}
 
     async def connect(self, key: str, websocket: WebSocket):
-        # OPTION B: Reject new connection if key is already online
+        # OPTION B IMPROVED: Check if connection is actually alive
         if key in self.active_connections:
-            logger.warning(f"🚫 Connection rejected: {key} is already online")
-            await websocket.close(code=4003, reason="License already in use")
-            return False
+            old_ws = self.active_connections[key]
+            try:
+                # Try to ping the old connection to see if it's actually alive
+                await old_ws.send_text(json.dumps({"type": "ping"}))
+                logger.warning(f"🚫 Connection rejected: {key} is already active")
+                await websocket.close(code=4003, reason="License already in use")
+                return False
+            except:
+                # Old connection is dead, clean it up
+                logger.info(f"♻️ Cleaning up stale connection for {key}")
+                self.disconnect(key)
             
         await websocket.accept()
         self.active_connections[key] = websocket
