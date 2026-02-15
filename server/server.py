@@ -278,26 +278,33 @@ app.add_middleware(
 
 # --- ROUTES ---
 @app.get("/", response_class=HTMLResponse)
-async def admin_dashboard(page: int = 1, search: str = "", username: str = Depends(authenticate)):
+async def admin_dashboard(page: int = 1, search: str = "", user_search: str = "", username: str = Depends(authenticate)):
     conn = sqlite3.connect(DB_PATH)
     limit = 10
     offset = (page - 1) * limit
     
-    # History with pagination and search
-    query = "SELECT * FROM history"
-    params = []
+    # Activity Feed with search
+    history_query = "SELECT * FROM history"
+    history_params = []
     if search:
-        query += " WHERE key LIKE ? OR code LIKE ? OR channel LIKE ? OR status LIKE ?"
-        params = [f"%{search}%"] * 4
+        history_query += " WHERE key LIKE ? OR code LIKE ? OR channel LIKE ? OR status LIKE ?"
+        history_params = [f"%{search}%"] * 4
     
-    total_rows = conn.execute(f"SELECT COUNT(*) FROM ({query})", params).fetchone()[0]
-    total_pages = (total_rows + limit - 1) // limit
+    total_history_rows = conn.execute(f"SELECT COUNT(*) FROM ({history_query})", history_params).fetchone()[0]
+    total_pages = (total_history_rows + limit - 1) // limit
+    history = conn.execute(f"{history_query} ORDER BY rowid DESC LIMIT ? OFFSET ?", history_params + [limit, offset]).fetchall()
+
+    # User list with separate search
+    license_query = "SELECT key, expires_at, total_claims FROM licenses"
+    license_params = []
+    if user_search:
+        license_query += " WHERE key LIKE ?"
+        license_params = [f"%{user_search}%"]
     
-    history = conn.execute(f"{query} ORDER BY rowid DESC LIMIT ? OFFSET ?", params + [limit, offset]).fetchall()
-    licenses = conn.execute("SELECT key, expires_at, total_claims FROM licenses").fetchall()
+    licenses = conn.execute(f"{license_query} ORDER BY created_at DESC", license_params).fetchall()
     conn.close()
 
-    history_html = "".join([f"<tr><td>{h[0].split(' ')[1]}</td><td><span class='license-tag'>{h[1][:10]}...</span></td><td>{h[3]}</td><td><span class='badge badge-success'>{h[4]}</span></td></tr>" for h in history])
+    history_html = "".join([f"<tr><td>{h[0].split(' ')[1]}</td><td><span class='license-tag' title='{h[1]}'>{h[1][:8]}...</span></td><td>{h[3]}</td><td><span class='badge badge-success'>{h[4]}</span></td></tr>" for h in history])
     
     licenses_html = ""
     for l in licenses:
@@ -359,7 +366,7 @@ async def admin_dashboard(page: int = 1, search: str = "", username: str = Depen
             .status-online {{ background: var(--success); box-shadow: 0 0 8px var(--success); }}
             .status-offline {{ background: var(--text-dim); }}
             
-            .search-box {{ position: relative; width: 100%; max-width: 300px; }}
+            .search-box {{ position: relative; width: 100%; }}
             .search-box input {{ width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 0.4rem 1rem; color: white; font-size: 0.85rem; }}
             
             .pagination {{ display: flex; align-items: center; gap: 1rem; margin-top: 1rem; justify-content: flex-end; font-size: 0.8rem; color: var(--text-dim); }}
@@ -378,7 +385,7 @@ async def admin_dashboard(page: int = 1, search: str = "", username: str = Depen
                 <h1><i class="fa-solid fa-bolt"></i> StakePeek</h1>
                 <div style="display: flex; gap: 0.5rem;">
                     <button id="reload-btn" onclick="toggleReload()" class="btn btn-outline">
-                        <i class="fa-solid fa-arrows-rotate"></i> Reload: {'ON' if not search else 'OFF'}
+                        <i class="fa-solid fa-arrows-rotate"></i> Reload: {'ON' if not (search or user_search) else 'OFF'}
                     </button>
                     <a href="/admin/reset-history" class="btn btn-danger" onclick="return confirm('Reset all history?')">
                         <i class="fa-solid fa-trash-can"></i>
@@ -390,8 +397,9 @@ async def admin_dashboard(page: int = 1, search: str = "", username: str = Depen
                 <div class="card">
                     <div class="card-header">
                         <span class="card-title">Activity Feed</span>
-                        <form action="/" method="get" class="search-box">
-                            <input type="text" name="search" placeholder="Filter..." value="{search}">
+                        <form action="/" method="get" class="search-box" style="max-width: 250px;">
+                            <input type="text" name="search" placeholder="Filter Feed..." value="{search}">
+                            <input type="hidden" name="user_search" value="{user_search}">
                         </form>
                     </div>
                     <table>
@@ -406,17 +414,21 @@ async def admin_dashboard(page: int = 1, search: str = "", username: str = Depen
                         <tbody>{history_html}</tbody>
                     </table>
                     <div class="pagination">
-                        {f"<a href='/?page={page-1}&search={search}' class='nav-btn'>Prev</a>" if page > 1 else ""}
+                        {f"<a href='/?page={page-1}&search={search}&user_search={user_search}' class='nav-btn'>Prev</a>" if page > 1 else ""}
                         <span>{page} / {total_pages}</span>
-                        {f"<a href='/?page={page+1}&search={search}' class='nav-btn'>Next</a>" if page < total_pages else ""}
+                        {f"<a href='/?page={page+1}&search={search}&user_search={user_search}' class='nav-btn'>Next</a>" if page < total_pages else ""}
                     </div>
                 </div>
 
                 <div class="card" style="align-self: start;">
-                    <div class="card-header">
+                    <div class="card-header" style="flex-direction: column; align-items: flex-start; gap: 0.5rem;">
                         <span class="card-title">Users</span>
+                        <form action="/" method="get" class="search-box">
+                            <input type="text" name="user_search" placeholder="Filter Users..." value="{user_search}">
+                            <input type="hidden" name="search" value="{search}">
+                        </form>
                     </div>
-                    <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                    <div style="display: flex; flex-direction: column; gap: 0.75rem; max-height: 400px; overflow-y: auto; padding-right: 0.5rem;">
                         {licenses_html}
                     </div>
                     <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border);">
@@ -433,7 +445,7 @@ async def admin_dashboard(page: int = 1, search: str = "", username: str = Depen
         </div>
 
         <script>
-            let autoReload = {str(not bool(search)).lower()};
+            let autoReload = {str(not (search or user_search)).lower()};
             setInterval(() => {{ if(autoReload) location.reload(); }}, 15000);
             function toggleReload() {{ 
                 autoReload = !autoReload; 
