@@ -494,6 +494,46 @@ async def get_token(license_key: str):
         "total_claims": res[1]
     }
 
+@app.get("/last_codes")
+async def get_last_codes():
+    conn = sqlite3.connect(DB_PATH)
+    # Return last 5 unique codes from history
+    codes = conn.execute("SELECT DISTINCT code, channel FROM history ORDER BY time DESC LIMIT 5").fetchall()
+    conn.close()
+    return [{"code": c[0], "channel": c[1]} for c in codes]
+
+@app.get("/last_codes")
+async def get_last_codes():
+    conn = sqlite3.connect(DB_PATH)
+    # Return last 5 unique codes from history
+    codes = conn.execute("SELECT DISTINCT code, channel FROM history ORDER BY time DESC LIMIT 5").fetchall()
+    conn.close()
+    return [{"code": c[0], "channel": c[1]} for c in codes]
+
+@app.get("/last_codes")
+async def get_last_codes():
+    conn = sqlite3.connect(DB_PATH)
+    # Get last 5 distinct codes from history
+    codes = conn.execute("SELECT DISTINCT code, channel FROM history ORDER BY time DESC LIMIT 5").fetchall()
+    conn.close()
+    return [{"code": c[0], "channel": c[1]} for c in codes]
+
+@app.get("/last_codes")
+async def get_last_codes():
+    conn = sqlite3.connect(DB_PATH)
+    # Get last 5 distinct codes from history
+    codes = conn.execute("SELECT DISTINCT code, channel FROM history ORDER BY time DESC LIMIT 5").fetchall()
+    conn.close()
+    return [{"code": c[0], "channel": c[1]} for c in codes]
+
+@app.get("/last_codes")
+async def get_last_codes():
+    conn = sqlite3.connect(DB_PATH)
+    # Get last 5 distinct codes from history
+    codes = conn.execute("SELECT DISTINCT code, channel FROM history ORDER BY time DESC LIMIT 5").fetchall()
+    conn.close()
+    return [{"code": c[0], "channel": c[1]} for c in codes]
+
 @app.websocket("/ws/{license_key}")
 async def websocket_endpoint(websocket: WebSocket, license_key: str):
     # FALLBACK: Support old direct license key connection for existing users
