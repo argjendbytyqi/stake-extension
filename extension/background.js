@@ -21,6 +21,7 @@ function connect() {
         setTimeout(() => {
           if (socket && socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify({ type: "ping" }));
+            console.log("📤 WebSocket Ping Sent");
             scheduleNextPing();
           }
         }, 25000);
@@ -62,6 +63,7 @@ function setupAFK() {
     const tabs = await chrome.tabs.query({ url: ["*://stake.com/*", "*://stake.us/*", "*://*.stake.com/*"] });
     if (tabs.length === 0) return;
 
+    // 1. Keep Session Hot
     chrome.scripting.executeScript({
       target: { tabId: tabs[0].id },
       func: async () => {
@@ -86,7 +88,23 @@ function setupAFK() {
         } catch (e) {}
       }
     });
-  }, 1000 * 60 * 25); // Every 25 mins
+
+    // 2. Pre-fetch Offers page to warm up cache
+    // We create an offscreen document or a hidden tab to load the heavy assets
+    try {
+      const prefetchTab = await chrome.tabs.create({ 
+        url: "https://stake.com/settings/offers", 
+        active: false,
+        pinned: true
+      });
+      // Give it 15 seconds to load then close it
+      setTimeout(() => {
+        chrome.tabs.remove(prefetchTab.id);
+        console.log("[STAKE-BOT] Cache Warmed: Offers Page Pre-fetched");
+      }, 15000);
+    } catch (e) { console.error("Prefetch error:", e); }
+
+  }, 1000 * 60 * 5); // Every 5 mins
 }
 
 async function processQueue() {
@@ -94,7 +112,9 @@ async function processQueue() {
   isProcessing = true;
   const drop = dropQueue.shift();
   await claimDrop(drop.code, drop.channel);
-  setTimeout(() => { isProcessing = false; processQueue(); }, 10000); 
+  // No delay for next item if queue isn't empty
+  isProcessing = false;
+  if (dropQueue.length > 0) processQueue();
 }
 
 async function claimDrop(code, channel) {
@@ -192,24 +212,29 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         window.stakeBotInjected = true;
         const autoClick = setInterval(() => {
           const bodyText = document.body.innerText;
-          const isFinished = /invalid|unavailable|claimed|Success|found|limit/i.test(bodyText);
+          const isFinished = /invalid|unavailable|claimed|Success|found|limit|Expired|already/i.test(bodyText);
           if (isFinished) {
             let finalStatus = "Unavailable";
             if (bodyText.includes('Success')) finalStatus = "Success";
             if (bodyText.includes('invalid')) finalStatus = "Invalid Code";
+            if (bodyText.includes('already')) finalStatus = "Already Claimed";
             chrome.runtime.sendMessage({ action: 'FINAL_REPORT', status: finalStatus, code: dropCode, channel: dropChannel });
             if (finalStatus === 'Success') { try { new Audio(soundUrl).play(); } catch(e) {} }
             setTimeout(() => {
               const closeBtn = document.querySelector('button[aria-label="Close"]') || document.querySelector('.modal-close');
               if (closeBtn) closeBtn.click(); else window.location.href = 'https://stake.com/settings/offers';
               window.stakeBotInjected = false;
-            }, 4000);
+            }, 3000);
             clearInterval(autoClick);
             return;
           }
           const btn = Array.from(document.querySelectorAll('button')).find(b => /Redeem|Submit|Claim/i.test(b.innerText) && b.offsetParent !== null && !b.disabled);
-          if (btn) btn.click();
-        }, 1000);
+          if (btn) {
+            btn.click();
+            // Faster check after click
+            setTimeout(() => {}, 500);
+          }
+        }, 500);
         setTimeout(() => { clearInterval(autoClick); window.stakeBotInjected = false; }, 30000);
       },
       args: [SUCCESS_SOUND_URL, code, channel]

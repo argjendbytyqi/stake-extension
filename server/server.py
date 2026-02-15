@@ -131,14 +131,25 @@ def run_telegram_worker(loop, broadcaster_manager):
             chat = await event.get_chat()
             channel_name = getattr(chat, 'username', 'Unknown')
             text = (event.raw_text or "").replace('\n', ' ')
+            
+            # FAST PATH: Check text first and broadcast immediately
             codes = re.findall(r'stakecom[a-zA-Z0-9]+', text) or re.findall(r'\b[a-zA-Z0-9]{8,20}\b', text)
-            if not codes and event.media:
+            valid_codes = [c for c in set(codes) if not c.isdigit() and 'telegram' not in c.lower()]
+            
+            for code in valid_codes:
+                asyncio.run_coroutine_threadsafe(broadcaster_manager.broadcast_drop(code, channel_name), main_loop)
+            
+            # SLOW PATH: OCR (only if no codes found in text and media exists)
+            if not valid_codes and event.media:
                 file_path = await event.download_media(file="temp_media")
                 media_text = extract_text_from_media(file_path)
                 codes = re.findall(r'stakecom[a-zA-Z0-9]+', media_text) or re.findall(r'\b[a-zA-Z0-9]{8,20}\b', media_text)
                 if os.path.exists(file_path): os.remove(file_path)
-            valid_codes = [c for c in set(codes) if not c.isdigit() and 'telegram' not in c.lower()]
-            for code in valid_codes: asyncio.run_coroutine_threadsafe(broadcaster_manager.broadcast_drop(code, channel_name), main_loop)
+                
+                valid_ocr_codes = [c for c in set(codes) if not c.isdigit() and 'telegram' not in c.lower()]
+                for code in valid_ocr_codes:
+                    asyncio.run_coroutine_threadsafe(broadcaster_manager.broadcast_drop(code, channel_name), main_loop)
+                    
         except Exception as e: logger.error(f"❌ Telegram Event Error: {e}")
 
     async def main_worker():
