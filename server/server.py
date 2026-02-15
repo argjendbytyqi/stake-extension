@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # --- CONFIGURATION ---
-API_ID = 39003063
-API_HASH = 'b19980f250f5053c4be259bb05668a35'
+API_ID = os.getenv("TG_API_ID", "39003063")
+API_HASH = os.getenv("TG_API_HASH", "b19980f250f5053c4be259bb05668a35")
 CHANNELS = ['StakecomDailyDrops', 'stakecomhighrollers']
 DB_PATH = 'licenses.db'
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "change-me-immediately")
