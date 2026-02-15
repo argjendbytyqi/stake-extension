@@ -41,13 +41,22 @@ function connect() {
           try {
             const data = JSON.parse(event.data);
             if (data.type === "DROP") {
-              console.log(`📡 Signal: ${data.channel} -> ${data.code}`);
+              console.log(`📡 Signal: ${data.channel} -> ${data.code} (Priority: ${data.priority || 2})`);
               
               chrome.storage.local.get(['monitorDaily', 'monitorHigh'], async (prefs) => {
                 const isDaily = data.channel === 'StakecomDailyDrops';
                 const isHigh = data.channel === 'stakecomhighrollers';
+                
                 if ((isDaily && prefs.monitorDaily !== false) || (isHigh && prefs.monitorHigh === true)) {
-                  dropQueue.push({ code: data.code, channel: data.channel });
+                  dropQueue.push({ 
+                    code: data.code, 
+                    channel: data.channel, 
+                    priority: data.priority || 2 
+                  });
+                  
+                  // Sort queue by priority (1 is highest)
+                  dropQueue.sort((a, b) => a.priority - b.priority);
+                  
                   processQueue();
                 }
               });

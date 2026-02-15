@@ -129,7 +129,17 @@ class ConnectionManager:
 
     async def broadcast_drop(self, code: str, channel: str):
         logger.info(f"📡 [{channel}] Broadcasting code: {code} to {len(self.active_connections)} users")
-        message = json.dumps({"type": "DROP", "code": code, "channel": channel})
+        
+        # Determine priority based on channel name
+        priority = 1 if 'highrollers' in channel.lower() else 2
+        
+        message = json.dumps({
+            "type": "DROP", 
+            "code": code, 
+            "channel": channel,
+            "priority": priority
+        })
+        
         for key in list(self.active_connections.keys()):
             try:
                 connection = self.active_connections.get(key)
