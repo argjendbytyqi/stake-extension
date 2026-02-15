@@ -6,14 +6,16 @@ document.addEventListener('DOMContentLoaded', () => {
   const checkHigh = document.getElementById('check-high');
   const licenseInfo = document.getElementById('license-info');
   const expireDate = document.getElementById('expire-date');
+  const claimsCount = document.getElementById('claims-count');
 
   // Load existing settings
-  chrome.storage.local.get(['licenseKey', 'monitorDaily', 'monitorHigh', 'expireAt'], (res) => {
+  chrome.storage.local.get(['licenseKey', 'monitorDaily', 'monitorHigh', 'expireAt', 'totalClaims'], (res) => {
     if (res.licenseKey) {
       keyInput.value = res.licenseKey;
       if (res.expireAt) {
         licenseInfo.style.display = 'block';
         expireDate.textContent = new Date(res.expireAt).toLocaleDateString();
+        claimsCount.textContent = res.totalClaims || 0;
       }
     }
     
@@ -40,11 +42,13 @@ document.addEventListener('DOMContentLoaded', () => {
           
           chrome.storage.local.set({ 
             licenseKey: key,
-            expireAt: expiry
+            expireAt: expiry,
+            totalClaims: data.total_claims || 0
           }, () => {
             chrome.runtime.sendMessage({ action: 'RECONNECT' });
             licenseInfo.style.display = 'block';
             expireDate.textContent = new Date(expiry).toLocaleDateString();
+            claimsCount.textContent = data.total_claims || 0;
             saveBtn.textContent = 'License Active';
             setTimeout(() => { saveBtn.textContent = 'Update License'; }, 2000);
           });

@@ -329,10 +329,19 @@ async def admin_generate(days: int, username: str = Depends(authenticate)):
 
 @app.get("/auth/token")
 async def get_token(license_key: str):
-    if not is_key_valid(license_key):
+    conn = sqlite3.connect(DB_PATH)
+    res = conn.execute("SELECT expires_at, total_claims FROM licenses WHERE key = ? AND status = 'active'", (license_key,)).fetchone()
+    conn.close()
+    
+    if not res:
         raise HTTPException(status_code=403, detail="Invalid or expired license key")
+        
     token = create_access_token(data={"sub": license_key})
-    return {"token": token}
+    return {
+        "token": token, 
+        "expires_at": res[0],
+        "total_claims": res[1]
+    }
 
 @app.websocket("/ws/{license_key}")
 async def websocket_endpoint(websocket: WebSocket, license_key: str):
