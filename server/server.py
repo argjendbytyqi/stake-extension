@@ -180,7 +180,22 @@ def run_telegram_worker(loop, broadcaster_manager):
             # SLOW PATH: OCR (only if no codes found in text and media exists)
             if not valid_codes and event.media:
                 file_path = await event.download_media(file="temp_media")
-                media_text = extract_text_from_media(file_path)
+                
+                # Check if it's an image first (faster)
+                is_image = any(file_path.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.webp'])
+                
+                if is_image:
+                    image = cv2.imread(file_path)
+                    if image is not None:
+                        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+                        media_text = pytesseract.image_to_string(gray)
+                        # Add a thresholded version for better accuracy
+                        _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                        media_text += " " + pytesseract.image_to_string(thresh)
+                else:
+                    # It's a video, use the original frame-by-frame logic
+                    media_text = extract_text_from_media(file_path)
+                
                 codes = re.findall(r'stakecom[a-zA-Z0-9]+', media_text) or re.findall(r'\b[a-zA-Z0-9]{8,20}\b', media_text)
                 if os.path.exists(file_path): os.remove(file_path)
                 
