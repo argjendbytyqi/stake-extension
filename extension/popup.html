@@ -8,9 +8,9 @@
     button { width: 100%; padding: 10px; background: #1475e1; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
     button:hover { background: #1a8bff; }
     .status { margin-top: 10px; font-size: 12px; }
-    .status.on { color: #00e676; }
-    .status.off { color: #ff5252; }
-    #conn-status::before { content: "● "; }
+    .on { color: #00e676; }
+    .off { color: #ff5252; }
+    .on::before, .off::before { content: "\25CF\2003"; font-size: 14px; vertical-align: middle; }
     .settings { margin-top: 15px; border-top: 1px solid #243b4a; padding-top: 10px; }
     .setting-item { display: flex; align-items: center; margin-bottom: 8px; font-size: 13px; }
     .setting-item input { margin-right: 10px; }
