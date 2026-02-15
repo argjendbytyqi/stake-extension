@@ -139,73 +139,83 @@ async function processQueue() {
 }
 
 async function claimDrop(code, channel) {
-  let tabs = await chrome.tabs.query({ active: true, currentWindow: true, url: ["*://stake.com/*", "*://stake.us/*", "*://*.stake.com/*"] });
-  if (tabs.length === 0) tabs = await chrome.tabs.query({ url: ["*://stake.com/*", "*://stake.us/*", "*://*.stake.com/*"] });
+  // 1. Get ALL open Stake tabs
+  const tabs = await chrome.tabs.query({ url: ["*://stake.com/*", "*://stake.us/*", "*://*.stake.com/*"] });
   if (tabs.length === 0) return;
 
-  chrome.scripting.executeScript({
-    target: { tabId: tabs[0].id },
-    func: async (dropCode, dropChannel, soundUrl) => {
-      const findToken = () => {
-        // 1. Check all possible localStorage keys (Stake sometimes uses random prefixes)
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key.includes('token') || key.includes('session') || key === 'jwt') {
-            const val = localStorage.getItem(key);
-            if (val && val.length > 20) return val; // Real tokens are long
+  console.log(`[StakePeek] Attempting claim on ${tabs.length} tabs simultaneously...`);
+
+  // 2. Fire the claim script on EVERY tab at the same time
+  // The first tab to succeed will report back.
+  tabs.forEach(tab => {
+    chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: async (dropCode, dropChannel, soundUrl) => {
+        // Prevent double-processing within the same tab
+        if (window.isClaiming === dropCode) return;
+        window.isClaiming = dropCode;
+
+        const findToken = () => {
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key.includes('token') || key.includes('session') || key === 'jwt') {
+              const val = localStorage.getItem(key);
+              if (val && val.length > 20) return val;
+            }
           }
-        }
-        
-        // 2. Check standard keys specifically
-        const standardKeys = ['x-access-token', 'sessionToken', 'token', 'jwt'];
-        for (const k of standardKeys) {
-          const val = window.localStorage.getItem(k) || window.sessionStorage.getItem(k);
-          if (val) return val;
+          const standardKeys = ['x-access-token', 'sessionToken', 'token', 'jwt'];
+          for (const k of standardKeys) {
+            const val = window.localStorage.getItem(k) || window.sessionStorage.getItem(k);
+            if (val) return val;
+          }
+          const cookieMatch = document.cookie.match(/session=([^;]+)/);
+          if (cookieMatch) return cookieMatch[1];
+          return null;
+        };
+
+        const token = findToken();
+        if (!token) {
+          // Redirect only if this is the active tab to avoid jumping windows
+          window.location.href = `https://stake.com/settings/offers?currency=btc&type=drop&code=${dropCode}&channel=${dropChannel}&modal=redeemBonus`;
+          return { status: "No Token (Redirected)" };
         }
 
-        // 3. Check cookies
-        const cookieMatch = document.cookie.match(/session=([^;]+)/);
-        if (cookieMatch) return cookieMatch[1];
-        
-        return null;
-      };
-
-      const token = findToken();
-      if (!token) {
-        // If background claim fails to find token, we MUST redirect to UI mode 
-        // because the UI usually forces the token to load or shows the login screen.
-        console.warn("[STAKE-BOT] No token found in background. Redirecting to UI...");
-        window.location.href = `https://stake.com/settings/offers?currency=btc&type=drop&code=${dropCode}&channel=${dropChannel}&modal=redeemBonus`;
-        return { status: "No Token (Redirected)" };
+        try {
+          const query = `mutation ClaimBonusCode($code: String!, $currency: CurrencyEnum!, $turnstileToken: String!) {
+            claimBonusCode(code: $code, currency: $currency, turnstileToken: $turnstileToken) { ip }
+          }`;
+          
+          // FAST HIT: We try once with empty turnstile (works for some drops)
+          const response = await fetch('https://stake.com/_api/graphql', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-access-token': token, 'x-language': 'en' },
+            body: JSON.stringify({ query, variables: { code: dropCode, currency: 'btc', turnstileToken: "" } })
+          });
+          
+          const resJson = await response.json();
+          if (resJson.errors) {
+            const msg = resJson.errors[0].message;
+            // If it needs captcha, we MUST use the UI
+            if (msg.includes('turnstileToken') || msg.includes('invalid_turnstile') || msg.includes('captcha')) {
+              window.location.href = `https://stake.com/settings/offers?currency=btc&type=drop&code=${dropCode}&channel=${dropChannel}&modal=redeemBonus`;
+              return { status: "REDIRECTED" };
+            }
+            return { status: msg };
+          }
+          
+          try { new Audio(soundUrl).play(); } catch(e) {}
+          return { status: "Success" };
+        } catch (e) { return { status: "Fetch Error" }; }
+      },
+      args: [code, channel, SUCCESS_SOUND_URL]
+    }).then((results) => {
+      const status = results[0]?.result?.status;
+      if (status && status !== "REDIRECTED" && status !== "No Token (Redirected)") {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: "REPORT", status: status, code: code, channel: channel }));
+        }
       }
-      try {
-        const query = `mutation ClaimBonusCode($code: String!, $currency: CurrencyEnum!, $turnstileToken: String!) {
-          claimBonusCode(code: $code, currency: $currency, turnstileToken: $turnstileToken) { ip }
-        }`;
-        const response = await fetch('https://stake.com/_api/graphql', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'x-access-token': token, 'x-language': 'en' },
-          body: JSON.stringify({ query, variables: { code: dropCode, currency: 'btc', turnstileToken: "" } })
-        });
-        const resJson = await response.json();
-        if (resJson.errors) {
-          const msg = resJson.errors[0].message;
-          if (msg.includes('turnstileToken') || msg.includes('invalid_turnstile')) {
-            window.location.href = `https://stake.com/settings/offers?currency=btc&type=drop&code=${dropCode}&channel=${dropChannel}&modal=redeemBonus`;
-            return { status: "REDIRECTED" };
-          }
-          return { status: msg };
-        }
-        try { new Audio(soundUrl).play(); } catch(e) {}
-        return { status: "Success" };
-      } catch (e) { return { status: "Fetch Error" }; }
-    },
-    args: [code, channel, SUCCESS_SOUND_URL]
-  }).then((results) => {
-    const status = results[0].result?.status || "Unknown";
-    if (status !== "REDIRECTED" && socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({ type: "REPORT", status: status, code: code, channel: channel }));
-    }
+    });
   });
 }
 
