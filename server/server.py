@@ -297,67 +297,152 @@ async def admin_dashboard(page: int = 1, search: str = "", username: str = Depen
     licenses = conn.execute("SELECT key, expires_at, total_claims FROM licenses").fetchall()
     conn.close()
 
-    history_html = "".join([f"<tr><td>{h[0]}</td><td>{h[1]}</td><td>{h[2]}</td><td>{h[3]}</td><td>{h[4]}</td></tr>" for h in history])
+    history_html = "".join([f"<tr><td>{h[0].split(' ')[1]}</td><td><span class='license-tag'>{h[1][:10]}...</span></td><td>{h[3]}</td><td><span class='badge badge-success'>{h[4]}</span></td></tr>" for h in history])
     
-    pagination_html = f"<div style='margin-top:10px;'>"
-    if page > 1: pagination_html += f"<a href='/?page={page-1}&search={search}' class='btn' style='padding:5px 10px; font-size:12px;'>Previous</a>"
-    pagination_html += f"<span style='margin: 0 15px;'>Page {page} of {total_pages}</span>"
-    if page < total_pages: pagination_html += f"<a href='/?page={page+1}&search={search}' class='btn' style='padding:5px 10px; font-size:12px;'>Next</a>"
-    pagination_html += "</div>"
-
     licenses_html = ""
     for l in licenses:
-        exp = datetime.fromisoformat(l[1]).strftime("%Y-%m-%d")
-        color = "#00e676" if datetime.now() < datetime.fromisoformat(l[1]) else "#ff5252"
-        status = manager.active_connections.get(l[0]) and "● Online" or "○ Offline"
-        status_color = manager.active_connections.get(l[0]) and "#00e676" or "#94a3b8"
-        licenses_html += f"<tr><td>{l[0]}</td><td style='color:{color}'>{exp}</td><td>{l[2]}</td><td style='color:{status_color}'>{status}</td><td><a href='/admin/delete/{l[0]}' style='color:#ff5252; text-decoration:none;' onclick='return confirm(\"Are you sure?\")'>Delete</a></td></tr>"
+        exp = datetime.fromisoformat(l[1]).strftime("%b %d")
+        is_online = manager.active_connections.get(l[0])
+        status_class = "status-online" if is_online else "status-offline"
+        licenses_html += f"""
+        <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border);">
+            <div>
+                <div style="font-size: 0.85rem; font-weight: 500;"><span class="status-dot {status_class}"></span>{l[0]}</div>
+                <div style="font-size: 0.75rem; color: var(--text-dim);">Exp: {exp} • Claims: {l[2]}</div>
+            </div>
+            <a href="/admin/delete/{l[0]}" style="color: var(--danger); font-size: 0.75rem;" onclick="return confirm('Delete?')"><i class="fa-solid fa-xmark"></i></a>
+        </div>"""
     
     return f"""
-    <html><head><title>StakePeek Admin</title><style>
-        body {{ font-family: sans-serif; background: #0f212e; color: white; padding: 40px; }}
-        .card {{ background: #1a2c38; padding: 20px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #243b4a; }}
-        table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
-        th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #243b4a; }}
-        th {{ color: #1475e1; font-size: 12px; text-transform: uppercase; }}
-        h1, h2 {{ color: #1475e1; }} .stat {{ font-size: 24px; font-weight: bold; color: #00e676; }}
-        .btn {{ background: #1475e1; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; margin-right: 10px; display: inline-block; }}
-        input[type="text"] {{ background: #0f212e; border: 1px solid #243b4a; color: white; padding: 8px; border-radius: 5px; width: 300px; }}
-    </style></head><body>
-        <h1>StakePeek Broadcaster</h1>
-        <div class="card">
-            <h2>Generate New License</h2>
-            <a href="/admin/generate/1" class="btn">1 Day</a>
-            <a href="/admin/generate/7" class="btn">7 Days</a>
-            <a href="/admin/generate/30" class="btn">30 Days</a>
-            <a href="/admin/generate/90" class="btn">90 Days</a>
-            <a href="/admin/generate/365" class="btn">1 Year</a>
-        </div>
-        <div class="card">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <h2>Active Licenses</h2>
-                <a href="/admin/reset-history" class="btn" style="background:#ff5252; font-size:12px; padding:5px 10px;" onclick="return confirm('This will delete ALL claim history and reset counters to 0. Are you sure?')">Reset All History</a>
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>StakePeek Admin</title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            :root {{
+                --bg: #0b1117;
+                --card-bg: #161b22;
+                --accent: #2f81f7;
+                --text: #c9d1d9;
+                --text-dim: #8b949e;
+                --success: #238636;
+                --danger: #da3633;
+                --border: #30363d;
+            }}
+            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+            body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; padding: 2rem; }}
+            .container {{ max-width: 1000px; margin: 0 auto; }}
+            
+            header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }}
+            h1 {{ font-size: 1.5rem; font-weight: 600; color: white; display: flex; align-items: center; gap: 0.5rem; }}
+            h1 i {{ color: var(--accent); }}
+            
+            .grid {{ display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem; }}
+            .card {{ background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; overflow: hidden; }}
+            .card-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }}
+            .card-title {{ font-size: 0.9rem; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05rem; }}
+            
+            .btn {{ display: inline-flex; align-items: center; gap: 0.5rem; background: var(--accent); color: white; padding: 0.5rem 1rem; border-radius: 6px; text-decoration: none; font-size: 0.85rem; font-weight: 500; border: none; cursor: pointer; transition: opacity 0.2s; }}
+            .btn:hover {{ opacity: 0.9; }}
+            .btn-danger {{ background: var(--danger); }}
+            .btn-outline {{ background: transparent; border: 1px solid var(--border); color: var(--text); }}
+            
+            table {{ width: 100%; border-collapse: collapse; font-size: 0.85rem; }}
+            th {{ text-align: left; padding: 0.75rem; color: var(--text-dim); border-bottom: 1px solid var(--border); font-weight: 500; }}
+            td {{ padding: 0.75rem; border-bottom: 1px solid var(--border); }}
+            tr:last-child td {{ border-bottom: none; }}
+            
+            .status-dot {{ display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 0.5rem; }}
+            .status-online {{ background: var(--success); box-shadow: 0 0 8px var(--success); }}
+            .status-offline {{ background: var(--text-dim); }}
+            
+            .search-box {{ position: relative; width: 100%; max-width: 300px; }}
+            .search-box input {{ width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 0.4rem 1rem; color: white; font-size: 0.85rem; }}
+            
+            .pagination {{ display: flex; align-items: center; gap: 1rem; margin-top: 1rem; justify-content: flex-end; font-size: 0.8rem; color: var(--text-dim); }}
+            .nav-btn {{ padding: 0.25rem 0.75rem; background: var(--card-bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); text-decoration: none; }}
+            
+            .license-tag {{ font-family: monospace; background: var(--bg); padding: 0.2rem 0.4rem; border-radius: 4px; font-size: 0.8rem; }}
+            .badge {{ padding: 0.1rem 0.5rem; border-radius: 12px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; }}
+            .badge-success {{ background: rgba(35, 134, 54, 0.2); color: #3fb950; }}
+            
+            @media (max-width: 768px) {{ .grid {{ grid-template-columns: 1fr; }} }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <header>
+                <h1><i class="fa-solid fa-bolt"></i> StakePeek</h1>
+                <div style="display: flex; gap: 0.5rem;">
+                    <button id="reload-btn" onclick="toggleReload()" class="btn btn-outline">
+                        <i class="fa-solid fa-arrows-rotate"></i> Reload: {'ON' if not search else 'OFF'}
+                    </button>
+                    <a href="/admin/reset-history" class="btn btn-danger" onclick="return confirm('Reset all history?')">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </a>
+                </div>
+            </header>
+
+            <div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Activity Feed</span>
+                        <form action="/" method="get" class="search-box">
+                            <input type="text" name="search" placeholder="Filter..." value="{search}">
+                        </form>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>License</th>
+                                <th>Code</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>{history_html}</tbody>
+                    </table>
+                    <div class="pagination">
+                        {f"<a href='/?page={page-1}&search={search}' class='nav-btn'>Prev</a>" if page > 1 else ""}
+                        <span>{page} / {total_pages}</span>
+                        {f"<a href='/?page={page+1}&search={search}' class='nav-btn'>Next</a>" if page < total_pages else ""}
+                    </div>
+                </div>
+
+                <div class="card" style="align-self: start;">
+                    <div class="card-header">
+                        <span class="card-title">Users</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                        {licenses_html}
+                    </div>
+                    <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+                        <span class="card-title" style="font-size: 0.7rem;">Quick Mint</span>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: 0.5rem;">
+                            <a href="/admin/generate/1" class="btn btn-outline" style="justify-content: center;">1D</a>
+                            <a href="/admin/generate/7" class="btn btn-outline" style="justify-content: center;">7D</a>
+                            <a href="/admin/generate/30" class="btn" style="justify-content: center;">30D</a>
+                            <a href="/admin/generate/365" class="btn" style="justify-content: center;">1Y</a>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <table><tr><th>License Key</th><th>Expires At</th><th>Total Claims</th><th>Status</th><th>Action</th></tr>{licenses_html}</table>
         </div>
-        <div class="card">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <h2>Recent Claim History</h2>
-                <form action="/" method="get">
-                    <input type="text" name="search" placeholder="Search by Key, Code, Status..." value="{search}">
-                    <button type="submit" class="btn" style="padding:8px 15px;">Search</button>
-                </form>
-            </div>
-            <table><tr><th>Time</th><th>User Key</th><th>Channel</th><th>Code</th><th>Status</th></tr>{history_html}</table>
-            {pagination_html}
-        </div>
+
         <script>
             let autoReload = {str(not bool(search)).lower()};
             setInterval(() => {{ if(autoReload) location.reload(); }}, 15000);
-            function toggleReload() {{ autoReload = !autoReload; document.getElementById('reload-btn').innerText = autoReload ? 'Auto-Reload: ON' : 'Auto-Reload: OFF'; }}
+            function toggleReload() {{ 
+                autoReload = !autoReload; 
+                const btn = document.getElementById('reload-btn');
+                btn.innerHTML = `<i class="fa-solid fa-arrows-rotate"></i> Reload: ${{autoReload ? 'ON' : 'OFF'}}`;
+            }}
         </script>
-        <button id="reload-btn" onclick="toggleReload()" class="btn" style="background:#334155;">Auto-Reload: {'ON' if not search else 'OFF'}</button>
-    </body></html>"""
+    </body>
+    </html>"""
 
 @app.get("/admin/reset-history")
 async def admin_reset_history(username: str = Depends(authenticate)):
