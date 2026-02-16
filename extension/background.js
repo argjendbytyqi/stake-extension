@@ -2,7 +2,7 @@ let socket = null;
 let isConnected = false;
 let isProcessing = false;
 let afkTimer = null;
-let hotTurnstileToken = null; // Store fresh token here
+let hotTurnstileToken = { value: null, timestamp: 0 }; // Store token with timestamp
 const dropQueue = [];
 const processedCodes = new Set(); // Reset on extension reload
 
@@ -139,9 +139,18 @@ async function claimDrop(code, channel) {
     claimBonusCode(code: $code, currency: $currency, turnstileToken: $turnstileToken) { ip }
   }`;
   
-  // Use the hot token if we have one, then clear it (one-time use)
-  const activeToken = hotTurnstileToken || "";
-  hotTurnstileToken = null; 
+  // Use the hot token if it's fresh (less than 90 seconds old)
+  let activeToken = "";
+  const now = Date.now();
+  if (hotTurnstileToken.value && (now - hotTurnstileToken.timestamp < 90000)) {
+    activeToken = hotTurnstileToken.value;
+    console.log(`[Blitz] Using hot token (Age: ${Math.round((now - hotTurnstileToken.timestamp)/1000)}s)`);
+  } else if (hotTurnstileToken.value) {
+    console.log("[Blitz] Hot token expired, ignoring.");
+  }
+
+  // Clear it so it's not reused
+  hotTurnstileToken = { value: null, timestamp: 0 }; 
 
   const payload = JSON.stringify({ query, variables: { code: code, currency: 'btc', turnstileToken: activeToken } });
 
@@ -201,7 +210,10 @@ async function claimDrop(code, channel) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'GET_STATUS') sendResponse({ connected: isConnected });
   else if (request.action === 'SET_HOT_TOKEN') {
-    hotTurnstileToken = request.token;
+    hotTurnstileToken = {
+        value: request.token,
+        timestamp: Date.now()
+    };
     console.log("🔥 Captcha Warmer: Fresh token received.");
   }
   else if (request.action === 'RECONNECT') { 
