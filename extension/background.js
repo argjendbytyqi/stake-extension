@@ -189,7 +189,11 @@ async function claimDrop(code, channel) {
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'GET_STATUS') sendResponse({ connected: isConnected });
-  else if (request.action === 'RECONNECT') { if (socket) socket.close(); connect(); }
+  else if (request.action === 'RECONNECT') { 
+    if (socket) socket.close(); 
+    processedCodes.clear(); // CLEAR CACHE ON RECONNECT/ACTIVATE
+    connect(); 
+  }
   else if (request.action === 'FINAL_REPORT') {
     if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({ type: "REPORT", status: request.status, code: request.code, channel: request.channel }));
