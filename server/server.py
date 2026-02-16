@@ -108,6 +108,7 @@ def authenticate(credentials: HTTPBasicCredentials = Depends(security)):
 class ConnectionManager:
     def __init__(self):
         self.active_connections: dict[str, WebSocket] = {}
+        self.last_codes: dict[str, str] = {}
 
     async def connect(self, key: str, websocket: WebSocket):
         # OPTION B IMPROVED: Check if connection is actually alive
@@ -140,6 +141,19 @@ class ConnectionManager:
         await websocket.accept()
         self.active_connections[key] = websocket
         logger.info(f"➕ User connected: {key}")
+
+        # PUSH LAST CODES TO NEW USER IMMEDIATELY
+        for channel, code in self.last_codes.items():
+            try:
+                await websocket.send_text(json.dumps({
+                    "type": "DROP",
+                    "code": code,
+                    "channel": channel,
+                    "priority": 1 if 'highrollers' in channel.lower() else 2
+                }))
+                logger.info(f"⚡ Pushed cached code {code} to new user {key}")
+            except: pass
+
         return True
 
     def disconnect(self, key: str):
@@ -148,6 +162,9 @@ class ConnectionManager:
             logger.info(f"➖ User disconnected: {key}")
 
     async def broadcast_drop(self, code: str, channel: str):
+        # Save to cache
+        self.last_codes[channel] = code
+        
         logger.info(f"📡 [{channel}] Broadcasting code: {code} to {len(self.active_connections)} users")
         
         # Determine priority based on channel name
@@ -238,20 +255,23 @@ def run_telegram_worker(loop, broadcaster_manager):
     async def main_worker():
         await client.start()
         logger.info("✅ [TELEGRAM] Worker Active.")
-        await asyncio.sleep(15)
+        
+        # Immediate Startup Fetch: Get the last code from each channel to prime the cache
+        await asyncio.sleep(5)
         for channel in CHANNELS:
             try:
-                async for message in client.iter_messages(channel, limit=1):
+                logger.info(f"⚡ Startup: Fetching last code from {channel}")
+                async for message in client.iter_messages(channel, limit=5):
                     text = (message.text or "").replace('\n', ' ')
-                    codes = re.findall(r'stakecom[a-zA-Z0-9]+', text) or re.findall(r'\b[a-zA-Z0-9]{8,20}\b', text)
-                    if not codes and message.media:
-                        file_path = await message.download_media(file="temp_startup")
-                        media_text = extract_text_from_media(file_path)
-                        codes = re.findall(r'stakecom[a-zA-Z0-9]+', media_text) or re.findall(r'\b[a-zA-Z0-9]{8,20}\b', media_text)
-                        if os.path.exists(file_path): os.remove(file_path)
+                    codes = re.findall(r'stakecom[a-zA-Z0-9]+', text, re.IGNORECASE) or re.findall(r'\b[a-zA-Z0-9]{8,20}\b', text)
                     valid = [c for c in set(codes) if not c.isdigit() and 'telegram' not in c.lower()]
-                    if valid: asyncio.run_coroutine_threadsafe(broadcaster_manager.broadcast_drop(valid[0], channel), main_loop)
-            except: pass
+                    if valid:
+                        logger.info(f"🎯 Found last code: {valid[0]}")
+                        asyncio.run_coroutine_threadsafe(broadcaster_manager.broadcast_drop(valid[0], channel), main_loop)
+                        break # Only need the most recent one
+            except Exception as e:
+                logger.error(f"❌ Startup Error for {channel}: {e}")
+        
         await client.run_until_disconnected()
 
     loop.run_until_complete(main_worker())
