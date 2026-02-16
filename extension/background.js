@@ -3,6 +3,7 @@ let isConnected = false;
 let isProcessing = false;
 let afkTimer = null;
 let hotTurnstileToken = { value: null, timestamp: 0 }; 
+let lastSignalTime = 0; // Track when signal arrived
 const dropQueue = [];
 const processedCodes = new Set(); 
 
@@ -43,6 +44,9 @@ function connect() {
           try {
             const data = JSON.parse(event.data);
             if (data.type === "DROP") {
+              console.log(`📡 Signal: ${data.channel} -> ${data.code}`);
+              lastSignalTime = Date.now();
+              
               // PRIORITY CHECK: Execute logic IMMEDIATELY without waiting for storage if possible
               if (processedCodes.has(data.code)) return;
 
@@ -200,6 +204,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   else if (request.action === 'FINAL_REPORT') {
     if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({ type: "REPORT", status: request.status, code: request.code, channel: request.channel }));
+    }
+    
+    // Track and store claim speed
+    if (lastSignalTime > 0) {
+        const speed = Date.now() - lastSignalTime;
+        chrome.storage.local.set({ lastClaimSpeed: speed });
+        console.log(`⏱️ [Blitz] Claim Speed: ${speed}ms`);
+        lastSignalTime = 0; // Reset for next drop
     }
   }
 });

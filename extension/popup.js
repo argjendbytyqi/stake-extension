@@ -7,11 +7,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const licenseInfo = document.getElementById('license-info');
   const expireDate = document.getElementById('expire-date');
   const claimsCount = document.getElementById('claims-count');
+  const strikeSpeed = document.getElementById('strike-speed');
 
   let isCurrentlyConnected = false;
 
   // Load existing settings
-  chrome.storage.local.get(['licenseKey', 'monitorDaily', 'monitorHigh', 'expireAt', 'totalClaims'], (res) => {
+  chrome.storage.local.get(['licenseKey', 'monitorDaily', 'monitorHigh', 'expireAt', 'totalClaims', 'lastClaimSpeed'], (res) => {
     if (res.licenseKey) {
       keyInput.value = res.licenseKey;
       if (res.expireAt) {
@@ -19,6 +20,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const date = new Date(res.expireAt);
         expireDate.textContent = `${date.getMonth()+1}/${date.getDate()}`;
         claimsCount.textContent = res.totalClaims || 0;
+        if (res.lastClaimSpeed) {
+            strikeSpeed.textContent = `${res.lastClaimSpeed}ms`;
+        }
       }
     }
     checkDaily.checked = res.monitorDaily !== false;
