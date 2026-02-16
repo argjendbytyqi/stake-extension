@@ -90,6 +90,11 @@ function setupAFK() {
     const tabs = await chrome.tabs.query({ url: ["*://stake.com/*", "*://stake.us/*", "*://*.stake.com/*"] });
     if (tabs.length === 0) return;
 
+    // Send heartbeat to all tabs to keep them alive and active
+    tabs.forEach(tab => {
+        chrome.tabs.sendMessage(tab.id, { action: "HEARTBEAT" }).catch(() => {});
+    });
+
     chrome.scripting.executeScript({
       target: { tabId: tabs[0].id },
       func: async () => {
