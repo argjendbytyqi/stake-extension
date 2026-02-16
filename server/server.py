@@ -261,14 +261,13 @@ def run_telegram_worker(loop, broadcaster_manager):
         for channel in CHANNELS:
             try:
                 logger.info(f"⚡ Startup: Fetching last code from {channel}")
-                async for message in client.iter_messages(channel, limit=5):
+                async for message in client.iter_messages(channel, limit=1):
                     text = (message.text or "").replace('\n', ' ')
                     codes = re.findall(r'stakecom[a-zA-Z0-9]+', text, re.IGNORECASE) or re.findall(r'\b[a-zA-Z0-9]{8,20}\b', text)
                     valid = [c for c in set(codes) if not c.isdigit() and 'telegram' not in c.lower()]
                     if valid:
                         logger.info(f"🎯 Found last code: {valid[0]}")
                         asyncio.run_coroutine_threadsafe(broadcaster_manager.broadcast_drop(valid[0], channel), main_loop)
-                        break # Only need the most recent one
             except Exception as e:
                 logger.error(f"❌ Startup Error for {channel}: {e}")
         
