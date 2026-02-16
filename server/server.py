@@ -147,17 +147,21 @@ class ConnectionManager:
 
         # PUSH LAST CODES TO NEW USER IMMEDIATELY
         # We push BOTH codes to the user. The extension background.js 
-        # already sorts them by priority (Highroller first).
+        # already handles sorting and duplicate prevention.
+        # Ensure we only send unique codes once across all channels.
+        pushed_codes = set()
         for channel, code in self.last_codes.items():
-            try:
-                await websocket.send_text(json.dumps({
-                    "type": "DROP",
-                    "code": code,
-                    "channel": channel,
-                    "priority": 1 if 'highrollers' in channel.lower() else 2
-                }))
-                logger.info(f"⚡ Pushed cached code {code} to new user {key}")
-            except: pass
+            if code not in pushed_codes:
+                try:
+                    await websocket.send_text(json.dumps({
+                        "type": "DROP",
+                        "code": code,
+                        "channel": channel,
+                        "priority": 1 if 'highrollers' in channel.lower() else 2
+                    }))
+                    pushed_codes.add(code)
+                    logger.info(f"⚡ Pushed cached code {code} from {channel} to new user {key}")
+                except: pass
 
         return True
 
