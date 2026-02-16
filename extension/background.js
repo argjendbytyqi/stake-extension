@@ -2,6 +2,7 @@ let socket = null;
 let isConnected = false;
 let isProcessing = false;
 let afkTimer = null;
+let hotTurnstileToken = null; // Store fresh token here
 const dropQueue = [];
 const processedCodes = new Set(); // Reset on extension reload
 
@@ -132,7 +133,12 @@ async function claimDrop(code, channel) {
   const query = `mutation ClaimBonusCode($code: String!, $currency: CurrencyEnum!, $turnstileToken: String!) {
     claimBonusCode(code: $code, currency: $currency, turnstileToken: $turnstileToken) { ip }
   }`;
-  const payload = JSON.stringify({ query, variables: { code: code, currency: 'btc', turnstileToken: "" } });
+  
+  // Use the hot token if we have one, then clear it (one-time use)
+  const activeToken = hotTurnstileToken || "";
+  hotTurnstileToken = null; 
+
+  const payload = JSON.stringify({ query, variables: { code: code, currency: 'btc', turnstileToken: activeToken } });
 
   tabs.forEach(tab => {
     chrome.scripting.executeScript({
@@ -189,6 +195,10 @@ async function claimDrop(code, channel) {
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'GET_STATUS') sendResponse({ connected: isConnected });
+  else if (request.action === 'SET_HOT_TOKEN') {
+    hotTurnstileToken = request.token;
+    console.log("🔥 Captcha Warmer: Fresh token received.");
+  }
   else if (request.action === 'RECONNECT') { 
     if (socket) socket.close(); 
     processedCodes.clear(); // CLEAR CACHE ON RECONNECT/ACTIVATE

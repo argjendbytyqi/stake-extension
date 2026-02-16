@@ -12,6 +12,13 @@
     "https://stake.com/*",
     "https://stake.us/*"
   ],
+  "content_scripts": [
+    {
+      "matches": ["https://stake.com/settings/offers*", "https://stake.us/settings/offers*"],
+      "js": ["warmer.js"],
+      "run_at": "document_end"
+    }
+  ],
   "action": {
     "default_popup": "popup.html"
   },
