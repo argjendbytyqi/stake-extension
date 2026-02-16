@@ -8,9 +8,9 @@ const processedCodes = new Set(); // Reset on extension reload
 const SUCCESS_SOUND_URL = "https://assets.mixkit.co/active_storage/sfx/2017/2017-preview.mp3";
 
 function connect() {
-  chrome.storage.local.get(['licenseKey'], (res) => {
+  chrome.storage.local.get(['licenseKey', 'connectionActive'], (res) => {
     const key = res.licenseKey;
-    if (!key) return;
+    if (!key || res.connectionActive === false) return;
 
     fetch(`http://18.199.98.207:8000/auth/token?license_key=${key}`)
       .then(r => r.json())

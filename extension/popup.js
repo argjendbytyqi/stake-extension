@@ -27,16 +27,14 @@ document.addEventListener('DOMContentLoaded', () => {
   // Action Button (Activate / Disconnect)
   saveBtn.addEventListener('click', () => {
     if (isCurrentlyConnected) {
-      // DISCONNECT LOGIC
-      chrome.storage.local.remove(['licenseKey'], () => {
-        chrome.runtime.sendMessage({ action: 'RECONNECT' }); // Force socket close
+      // DISCONNECT LOGIC (Keep the key, stop the socket)
+      chrome.storage.local.set({ connectionActive: false }, () => {
+        chrome.runtime.sendMessage({ action: 'RECONNECT' }); 
         statusSpan.textContent = 'Offline';
         statusSpan.className = 'off';
         isCurrentlyConnected = false;
         saveBtn.textContent = 'Activate License';
         saveBtn.style.background = '#1475e1';
-        keyInput.value = '';
-        licenseInfo.style.display = 'none';
       });
       return;
     }
@@ -56,6 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
           
           chrome.storage.local.set({ 
             licenseKey: key,
+            connectionActive: true,
             expireAt: expiry,
             totalClaims: data.total_claims || 0
           }, () => {
