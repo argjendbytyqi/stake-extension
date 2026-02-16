@@ -1,52 +1,259 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
-    body { width: 300px; font-family: sans-serif; padding: 15px; background: #0f212e; color: white; }
-    h2 { color: #1475e1; margin-top: 0; }
-    input[type="text"] { width: 100%; padding: 8px; margin: 10px 0; border-radius: 4px; border: none; box-sizing: border-box; }
-    button { width: 100%; padding: 10px; background: #1475e1; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
-    button:hover { background: #1a8bff; }
-    .status { margin-top: 10px; font-size: 12px; }
-    .on { color: #00e676; }
-    .off { color: #ff5252; }
-    .on::before, .off::before { content: "\25CF\2003"; font-size: 14px; vertical-align: middle; }
-    .settings { margin-top: 15px; border-top: 1px solid #243b4a; padding-top: 10px; }
-    .setting-item { display: flex; align-items: center; margin-bottom: 8px; font-size: 13px; }
-    .setting-item input { margin-right: 10px; }
-    .hint { font-size: 11px; color: #94a3b8; display: block; margin-top: -4px; margin-left: 24px; margin-bottom: 5px; }
+    :root {
+      --bg: #0b1117;
+      --card-bg: #161b22;
+      --accent: #2f81f7;
+      --accent-hover: #58a6ff;
+      --text: #c9d1d9;
+      --text-dim: #8b949e;
+      --success: #238636;
+      --danger: #da3633;
+      --border: #30363d;
+      --gold: #f2a900;
+    }
+    
+    body { 
+      width: 320px; 
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; 
+      margin: 0; 
+      background: var(--bg); 
+      color: var(--text); 
+      overflow: hidden;
+    }
+
+    .header {
+      padding: 16px;
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 16px;
+      color: white;
+    }
+
+    .brand i { color: var(--accent); font-size: 18px; }
+
+    .pro-badge {
+      font-size: 10px;
+      background: linear-gradient(45deg, var(--gold), #ffdf00);
+      color: black;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .content { padding: 16px; }
+
+    .status-bar {
+      background: rgba(48, 54, 61, 0.3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .status-label { font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 6px; }
+    
+    #conn-status { font-size: 12px; font-weight: 600; }
+    .status-online { color: var(--success); text-shadow: 0 0 10px rgba(35, 134, 54, 0.5); }
+    .status-offline { color: var(--text-dim); }
+
+    .input-group { margin-bottom: 16px; }
+    .input-group label { display: block; font-size: 11px; font-weight: 600; color: var(--text-dim); margin-bottom: 6px; text-transform: uppercase; }
+    
+    input[type="text"] {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: white;
+      padding: 10px 12px;
+      border-radius: 6px;
+      font-family: 'Roboto Mono', monospace;
+      font-size: 13px;
+      box-sizing: border-box;
+      transition: border-color 0.2s;
+    }
+
+    input[type="text"]:focus { outline: none; border-color: var(--accent); }
+
+    .btn {
+      width: 100%;
+      padding: 12px;
+      border-radius: 6px;
+      border: none;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-primary:hover { background: var(--accent-hover); }
+    
+    .btn-danger { background: #21262d; color: var(--danger); border: 1px solid var(--border); }
+    .btn-danger:hover { background: var(--danger); color: white; }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+
+    .stat-card {
+      background: var(--card-bg);
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+
+    .stat-val { display: block; font-size: 14px; font-weight: 700; color: white; }
+    .stat-lbl { font-size: 10px; color: var(--text-dim); text-transform: uppercase; }
+
+    .settings-panel {
+      margin-top: 16px;
+      background: rgba(48, 54, 61, 0.2);
+      border-radius: 8px;
+      padding: 12px;
+    }
+
+    .toggle-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .toggle-item:last-child { margin-bottom: 0; }
+    .toggle-item label { font-size: 12px; font-weight: 500; }
+
+    /* Custom Checkbox */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 32px;
+      height: 18px;
+    }
+
+    .switch input { opacity: 0; width: 0; height: 0; }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #30363d;
+      transition: .2s;
+      border-radius: 18px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 12px; width: 12px;
+      left: 3px; bottom: 3px;
+      background-color: white;
+      transition: .2s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider { background-color: var(--accent); }
+    input:checked + .slider:before { transform: translateX(14px); }
+
+    .footer {
+      padding: 12px;
+      text-align: center;
+      font-size: 10px;
+      color: var(--text-dim);
+      background: var(--card-bg);
+    }
   </style>
 </head>
 <body>
-  <h2>StakePeek</h2>
-  <div id="license-section">
-    <div style="display: flex; justify-content: space-between; align-items: center;">
-      <label style="font-size: 12px; color: #94a3b8;">LICENSE KEY</label>
-      <span id="conn-status" class="off" style="font-size: 11px; font-weight: bold;">Offline</span>
+  <div class="header">
+    <div class="brand">
+      <i class="fa-solid fa-bolt-lightning"></i>
+      StakePeek <span class="pro-badge">Blitz</span>
     </div>
-    <input type="text" id="license-key" placeholder="STAKE-XXXX-XXXX">
-    <div id="license-info" style="display: none; margin-bottom: 10px; font-size: 11px; color: #94a3b8;">
-      Expires: <span id="expire-date" style="color: #00e676;">--</span> | 
-      Claims: <span id="claims-count" style="color: #1475e1;">0</span>
+    <div style="font-size: 14px; color: var(--text-dim);">
+      <i class="fa-solid fa-gear" style="cursor:pointer;"></i>
     </div>
-    <button id="save-btn">Activate License</button>
-  </div>
-  
-  <div class="settings">
-    <div class="setting-item">
-      <input type="checkbox" id="check-daily" checked>
-      <label for="check-daily">Daily Drops (Low Wager)</label>
-    </div>
-    <span class="hint">Monitor @StakecomDailyDrops (2k-12k)</span>
-    
-    <div class="setting-item">
-      <input type="checkbox" id="check-high">
-      <label for="check-high">High Rollers (High Wager)</label>
-    </div>
-    <span class="hint">Monitor @stakecomhighrollers (50k-500k)</span>
   </div>
 
-  <div class="status" style="display:none;">Status: <span id="conn-status" class="off">Disconnected</span></div>
+  <div class="content">
+    <div class="status-bar">
+      <div class="status-label">
+        <i class="fa-solid fa-signal"></i> Engine Status
+      </div>
+      <span id="conn-status" class="status-offline">OFFLINE</span>
+    </div>
+
+    <div class="input-group">
+      <label>License Key</label>
+      <input type="text" id="license-key" placeholder="STAKE-XXXX-XXXX" spellcheck="false">
+    </div>
+
+    <button id="save-btn" class="btn btn-primary">
+      <i class="fa-solid fa-key"></i> Activate System
+    </button>
+
+    <div id="license-info" style="display:none;">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <span id="expire-date" class="stat-val">--</span>
+          <span class="stat-lbl">Expires</span>
+        </div>
+        <div class="stat-card">
+          <span id="claims-count" class="stat-val">0</span>
+          <span class="stat-lbl">Total Claims</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-panel">
+      <div class="toggle-item">
+        <label>Daily Drops</label>
+        <label class="switch">
+          <input type="checkbox" id="check-daily" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="toggle-item">
+        <label>High Rollers</label>
+        <label class="switch">
+          <input type="checkbox" id="check-high">
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+     didier didier didier | v1.2.0-blitz
+  </div>
+
   <script src="popup.js"></script>
 </body>
 </html>

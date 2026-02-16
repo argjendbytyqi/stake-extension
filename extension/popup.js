@@ -16,7 +16,8 @@ document.addEventListener('DOMContentLoaded', () => {
       keyInput.value = res.licenseKey;
       if (res.expireAt) {
         licenseInfo.style.display = 'block';
-        expireDate.textContent = new Date(res.expireAt).toLocaleDateString();
+        const date = new Date(res.expireAt);
+        expireDate.textContent = `${date.getMonth()+1}/${date.getDate()}`;
         claimsCount.textContent = res.totalClaims || 0;
       }
     }
@@ -24,26 +25,20 @@ document.addEventListener('DOMContentLoaded', () => {
     checkHigh.checked = !!res.monitorHigh;
   });
 
-  // Action Button (Activate / Disconnect)
+  // Action Button
   saveBtn.addEventListener('click', () => {
     if (isCurrentlyConnected) {
-      // DISCONNECT LOGIC (Keep the key, stop the socket)
       chrome.storage.local.set({ connectionActive: false }, () => {
         chrome.runtime.sendMessage({ action: 'RECONNECT' }); 
-        statusSpan.textContent = 'Offline';
-        statusSpan.className = 'off';
-        isCurrentlyConnected = false;
-        saveBtn.textContent = 'Activate License';
-        saveBtn.style.background = '#1475e1';
+        updateUI(false);
       });
       return;
     }
 
-    // ACTIVATE LOGIC
     const key = keyInput.value.trim();
     if (!key) return;
     
-    saveBtn.textContent = 'Connecting...';
+    saveBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Initializing...';
     
     fetch(`http://18.199.98.207:8000/auth/token?license_key=${key}`)
       .then(r => r.json())
@@ -60,23 +55,41 @@ document.addEventListener('DOMContentLoaded', () => {
           }, () => {
             chrome.runtime.sendMessage({ action: 'RECONNECT' });
             licenseInfo.style.display = 'block';
-            expireDate.textContent = new Date(expiry).toLocaleDateString();
+            const date = new Date(expiry);
+            expireDate.textContent = `${date.getMonth()+1}/${date.getDate()}`;
             claimsCount.textContent = data.total_claims || 0;
           });
         } else {
-          saveBtn.textContent = 'Invalid Key';
-          saveBtn.style.background = '#ff5252';
+          saveBtn.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Invalid Key';
+          saveBtn.classList.add('btn-danger');
           setTimeout(() => { 
-            saveBtn.textContent = 'Activate License'; 
-            saveBtn.style.background = '#1475e1';
+            saveBtn.innerHTML = '<i class="fa-solid fa-key"></i> Activate System';
+            saveBtn.classList.remove('btn-danger');
           }, 2000);
         }
       })
       .catch(() => {
-        saveBtn.textContent = 'Server Error';
-        setTimeout(() => { saveBtn.textContent = 'Activate License'; }, 2000);
+        saveBtn.innerHTML = '<i class="fa-solid fa-server"></i> Server Offline';
+        setTimeout(() => { 
+            saveBtn.innerHTML = '<i class="fa-solid fa-key"></i> Activate System'; 
+        }, 2000);
       });
   });
+
+  function updateUI(online) {
+    isCurrentlyConnected = online;
+    if (online) {
+      statusSpan.textContent = 'ACTIVE';
+      statusSpan.className = 'status-online';
+      saveBtn.innerHTML = '<i class="fa-solid fa-power-off"></i> Terminate Link';
+      saveBtn.className = 'btn btn-danger';
+    } else {
+      statusSpan.textContent = 'OFFLINE';
+      statusSpan.className = 'status-offline';
+      saveBtn.innerHTML = '<i class="fa-solid fa-key"></i> Activate System';
+      saveBtn.className = 'btn btn-primary';
+    }
+  }
 
   checkDaily.addEventListener('change', () => {
     chrome.storage.local.set({ monitorDaily: checkDaily.checked });
@@ -86,26 +99,11 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.storage.local.set({ monitorHigh: checkHigh.checked });
   });
 
-  // UI Sync with Background State
   const checkStatus = () => {
     try {
       chrome.runtime.sendMessage({ action: 'GET_STATUS' }, (response) => {
         if (chrome.runtime.lastError) return;
-        if (response && response.connected) {
-          isCurrentlyConnected = true;
-          statusSpan.textContent = 'Online';
-          statusSpan.className = 'on';
-          saveBtn.textContent = 'Disconnect License';
-          saveBtn.style.background = '#ff5252'; // Red for disconnect
-        } else {
-          isCurrentlyConnected = false;
-          statusSpan.textContent = 'Offline';
-          statusSpan.className = 'off';
-          if (saveBtn.textContent !== 'Connecting...') {
-            saveBtn.textContent = 'Activate License';
-            saveBtn.style.background = '#1475e1'; // Blue for activate
-          }
-        }
+        updateUI(!!(response && response.connected));
       });
     } catch (e) {}
   };
