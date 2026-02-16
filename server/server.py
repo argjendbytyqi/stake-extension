@@ -78,16 +78,20 @@ def create_access_token(data: dict):
 
 def log_claim(key, channel, code, status):
     conn = sqlite3.connect(DB_PATH)
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
-    # ALWAYS log the attempt to history
-    conn.execute("INSERT INTO history VALUES (?, ?, ?, ?, ?)", (now, key, channel, code, status))
+    # Check if this license has already tried this specific code
+    existing = conn.execute("SELECT 1 FROM history WHERE key = ? AND code = ?", (key, code)).fetchone()
     
-    # Only increment claims if it was a success
-    if status == 'Success':
-        conn.execute("UPDATE licenses SET total_claims = total_claims + 1 WHERE key = ?", (key,))
+    if not existing:
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn.execute("INSERT INTO history VALUES (?, ?, ?, ?, ?)", (now, key, channel, code, status))
+        
+        # Only increment claims if it was a success
+        if status == 'Success':
+            conn.execute("UPDATE licenses SET total_claims = total_claims + 1 WHERE key = ?", (key,))
+        
+        conn.commit()
     
-    conn.commit()
     conn.close()
 
 init_db()
