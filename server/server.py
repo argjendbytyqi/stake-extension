@@ -80,15 +80,14 @@ def log_claim(key, channel, code, status):
     conn = sqlite3.connect(DB_PATH)
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
-    # Check if this specific code was already successfully claimed by ANYONE
-    # Or if this specific license already has an entry for this code
-    existing = conn.execute("SELECT 1 FROM history WHERE code = ? AND (status = 'Success' OR key = ?)", (code, key)).fetchone()
+    # ALWAYS log the attempt to history
+    conn.execute("INSERT INTO history VALUES (?, ?, ?, ?, ?)", (now, key, channel, code, status))
     
-    if not existing:
-        conn.execute("INSERT INTO history VALUES (?, ?, ?, ?, ?)", (now, key, channel, code, status))
-        if status == 'Success':
-            conn.execute("UPDATE licenses SET total_claims = total_claims + 1 WHERE key = ?", (key,))
-        conn.commit()
+    # Only increment claims if it was a success
+    if status == 'Success':
+        conn.execute("UPDATE licenses SET total_claims = total_claims + 1 WHERE key = ?", (key,))
+    
+    conn.commit()
     conn.close()
 
 init_db()
@@ -267,7 +266,8 @@ def run_telegram_worker(loop, broadcaster_manager):
                     valid = [c for c in set(codes) if not c.isdigit() and 'telegram' not in c.lower()]
                     if valid:
                         logger.info(f"🎯 Found last code: {valid[0]}")
-                        asyncio.run_coroutine_threadsafe(broadcaster_manager.broadcast_drop(valid[0], channel), main_loop)
+                        # Update cache directly
+                        broadcaster_manager.last_codes[channel] = valid[0]
             except Exception as e:
                 logger.error(f"❌ Startup Error for {channel}: {e}")
         
