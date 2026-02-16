@@ -146,6 +146,8 @@ class ConnectionManager:
         logger.info(f"➕ User connected: {key}")
 
         # PUSH LAST CODES TO NEW USER IMMEDIATELY
+        # We push BOTH codes to the user. The extension background.js 
+        # already sorts them by priority (Highroller first).
         for channel, code in self.last_codes.items():
             try:
                 await websocket.send_text(json.dumps({

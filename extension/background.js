@@ -43,11 +43,20 @@ function connect() {
             if (data.type === "DROP") {
               console.log(`📡 Signal: ${data.channel} -> ${data.code} (Priority: ${data.priority || 2})`);
               
-              chrome.storage.local.get(['monitorDaily', 'monitorHigh'], async (prefs) => {
+              chrome.storage.local.get(['monitorDaily', 'monitorHigh', 'lastProcessedCode'], async (prefs) => {
                 const isDaily = data.channel === 'StakecomDailyDrops';
                 const isHigh = data.channel === 'stakecomhighrollers';
                 
+                // 1. Skip if the user has ALREADY tried this code in this session
+                if (prefs.lastProcessedCode === data.code) {
+                    console.log(`⏭️ Already tried ${data.code}. Skipping.`);
+                    return;
+                }
+
                 if ((isDaily && prefs.monitorDaily !== false) || (isHigh && prefs.monitorHigh === true)) {
+                  // 2. Mark as processed immediately to prevent duplicates
+                  chrome.storage.local.set({ lastProcessedCode: data.code });
+
                   dropQueue.push({ 
                     code: data.code, 
                     channel: data.channel, 
