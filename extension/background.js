@@ -212,12 +212,12 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
             
             chrome.runtime.sendMessage({ action: 'FINAL_REPORT', status: finalStatus, code: dropCode, channel: dropChannel });
             
-            // Auto-close modal after reporting
-            setTimeout(() => {
-                const closeBtn = document.querySelector('button[aria-label="Close"]') || document.querySelector('.modal-close');
-                if (closeBtn) closeBtn.click();
-                window.stakeBotInjected = false;
-            }, 2000);
+            // Reverting to immediate cleanup logic
+            const closeBtn = document.querySelector('button[aria-label="Close"]') || 
+                           document.querySelector('.modal-close') ||
+                           Array.from(document.querySelectorAll('button')).find(b => /Dismiss|Close/i.test(b.innerText));
+            if (closeBtn) closeBtn.click();
+            window.stakeBotInjected = false;
             
             clearInterval(autoClick);
             return;
@@ -226,7 +226,6 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
           if (btn) btn.click();
         }, 500);
         
-        // Safety timeout to prevent infinite loops
         setTimeout(() => { 
             clearInterval(autoClick); 
             window.stakeBotInjected = false; 
