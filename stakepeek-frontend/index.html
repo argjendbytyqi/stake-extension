@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StakePeek Blitz | High-Speed Stake Automation</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --bg: #0b0e11;
+            --card: #15191e;
+            --accent: #00ff9d;
+            --text: #ffffff;
+            --text-dim: #94a3b8;
+            --gradient: linear-gradient(135deg, #00ff9d 0%, #00bcff 100%);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+        .container { max-width: 1000px; margin: 0 auto; padding: 0 2rem; }
+        
+        /* Hero Section */
+        header { padding: 4rem 0; text-align: center; }
+        .logo { font-size: 2.5rem; font-weight: 800; background: var(--gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 1rem; }
+        h1 { font-size: 3.5rem; margin-bottom: 1.5rem; letter-spacing: -1px; }
+        .tagline { font-size: 1.25rem; color: var(--text-dim); max-width: 600px; margin: 0 auto 2rem; }
+        
+        .badge-grid { display: flex; justify-content: center; gap: 1rem; margin-bottom: 3rem; }
+        .badge { background: rgba(0, 255, 157, 0.1); border: 1px solid rgba(0, 255, 157, 0.2); padding: 0.5rem 1rem; border-radius: 100px; color: var(--accent); font-weight: 600; font-size: 0.9rem; }
+
+        /* CTA */
+        .cta-btn { display: inline-flex; align-items: center; gap: 0.75rem; background: var(--gradient); color: #000; padding: 1rem 2rem; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 1.1rem; transition: transform 0.2s; }
+        .cta-btn:hover { transform: translateY(-3px); }
+
+        /* Features */
+        .section-title { text-align: center; margin: 4rem 0 2rem; font-size: 2rem; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; }
+        .card { background: var(--card); padding: 2rem; border-radius: 12px; border: 1px solid #232931; }
+        .card i { font-size: 2rem; color: var(--accent); margin-bottom: 1rem; }
+        .card h3 { margin-bottom: 1rem; }
+        .card p { color: var(--text-dim); }
+
+        /* FAQ */
+        .faq { margin-top: 4rem; }
+        .faq-item { margin-bottom: 1.5rem; border-bottom: 1px solid #232931; padding-bottom: 1.5rem; }
+        .faq-item h4 { margin-bottom: 0.5rem; color: var(--accent); }
+
+        footer { text-align: center; padding: 4rem 0; color: var(--text-dim); font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">STAKEPEEK BLITZ</div>
+            <h1>The Fastest Stake Claimer.</h1>
+            <p class="tagline">Engineered for high-frequency execution. Don't just claim drops—strike them at the speed of light.</p>
+            
+            <div class="badge-grid">
+                <div class="badge"><i class="fas fa-bolt"></i> ~370ms Strike Speed</div>
+                <div class="badge"><i class="fas fa-shield-halved"></i> 100% Encrypted</div>
+                <div class="badge"><i class="fas fa-check"></i> Multi-Tab Ready</div>
+            </div>
+
+            <a href="https://t.me/YOUR_CHANNEL_NAME" class="cta-btn">
+                <i class="fab fa-telegram"></i> JOIN TELEGRAM TO BUY
+            </a>
+        </header>
+
+        <section id="features">
+            <h2 class="section-title">Why Blitz?</h2>
+            <div class="grid">
+                <div class="card">
+                    <i class="fas fa-microchip"></i>
+                    <h3>Raw Network Injection</h3>
+                    <p>Bypasses standard browser lag to hit Stake's API directly. We consistently clock under 400ms round-trip.</p>
+                </div>
+                <div class="card">
+                    <h3>Auto-Cleanup UI</h3>
+                    <p>The system automatically clicks "Redeem" and closes the modal instantly so you are ready for the next drop.</p>
+                </div>
+                <div class="card">
+                    <i class="fas fa-fingerprint"></i>
+                    <h3>Secure Licensing</h3>
+                    <p>Locked to your unique device profile. Protected by our private Cloudflare-proxied backend.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="faq">
+            <h2 class="section-title">FAQ</h2>
+            <div class="faq-item">
+                <h4>How do I install?</h4>
+                <p>After purchase on Telegram, you will receive a ZIP file. Load it into Chrome or Brave via "Load Unpacked" in Developer Mode.</p>
+            </div>
+            <div class="faq-item">
+                <h4>Does it require a bot?</h4>
+                <p>No. It runs entirely inside your browser as a lightweight extension. You just need to keep a Stake tab open.</p>
+            </div>
+            <div class="faq-item">
+                <h4>How do I pay?</h4>
+                <p>We accept Crypto payments directly through our Telegram bot for instant delivery of your license key and ZIP file.</p>
+            </div>
+        </section>
+
+        <footer>
+            &copy; 2026 StakePeek Blitz. Not affiliated with Stake.com or Stake.us.
+        </footer>
+    </div>
+</body>
+</html>
