@@ -196,6 +196,10 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     const url = new URL(tab.url);
     const code = url.searchParams.get('code');
     const channel = url.searchParams.get('channel');
+    
+    // Safety check: Don't inject if code is missing or "None"
+    if (!code || code === 'None' || code === 'null') return;
+
     chrome.scripting.executeScript({
       target: { tabId: tabId },
       func: (dropCode, dropChannel) => {
@@ -204,6 +208,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         const autoClick = setInterval(() => {
           const bodyText = document.body.innerText;
           const isFinished = /invalid|unavailable|claimed|Success|found|limit|Expired|already/i.test(bodyText);
+          
           if (isFinished) {
             let finalStatus = "Unavailable";
             if (bodyText.includes('Success')) finalStatus = "Success";
@@ -212,7 +217,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
             
             chrome.runtime.sendMessage({ action: 'FINAL_REPORT', status: finalStatus, code: dropCode, channel: dropChannel });
             
-            // Reverting to immediate cleanup logic
+            // Auto-close logic
             const closeBtn = document.querySelector('button[aria-label="Close"]') || 
                            document.querySelector('.modal-close') ||
                            Array.from(document.querySelectorAll('button')).find(b => /Dismiss|Close/i.test(b.innerText));
@@ -222,14 +227,21 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
             clearInterval(autoClick);
             return;
           }
-          const btn = Array.from(document.querySelectorAll('button')).find(b => /Redeem|Submit|Claim/i.test(b.innerText) && b.offsetParent !== null && !b.disabled);
+
+          // Search for the button
+          const btn = Array.from(document.querySelectorAll('button')).find(b => 
+            /Redeem|Submit|Claim/i.test(b.innerText) && 
+            b.offsetParent !== null && 
+            !b.disabled
+          );
+          
           if (btn) btn.click();
         }, 500);
         
         setTimeout(() => { 
             clearInterval(autoClick); 
             window.stakeBotInjected = false; 
-        }, 30000);
+        }, 15000);
       },
       args: [code, channel]
     });
