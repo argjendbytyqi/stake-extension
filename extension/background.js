@@ -76,7 +76,6 @@ async function claimDrop(code, channel) {
     activeToken = hotTurnstileToken.value;
   }
   
-  // 🔥 NO-STRINGS-ATTACHED PRE-WARMED PAYLOAD
   const payload = `{"query":"mutation ClaimBonusCode($code: String!, $currency: CurrencyEnum!, $turnstileToken: String!) { claimBonusCode(code: $code, currency: $currency, turnstileToken: $turnstileToken) { ip } }","variables":{"code":"${code}","currency":"btc","turnstileToken":"${activeToken}"}}`;
 
   let alreadyReported = false;
@@ -102,7 +101,6 @@ async function claimDrop(code, channel) {
         }
 
         try {
-          // 🔥 RAW FETCH - REMOVED ASYNC JSON PARSING ON CRITICAL PATH
           const response = await fetch('https://stake.com/_api/graphql', {
             method: 'POST',
             headers: { 
@@ -114,7 +112,6 @@ async function claimDrop(code, channel) {
             priority: 'high'
           });
           
-          // Speed report is based on response arrival, not parsing arrival
           return { status: "COMPLETE", raw: await response.text() };
         } catch (e) { return { status: "Fetch Error" }; }
       },
@@ -167,6 +164,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
+// ⚡ UI AUTO-CLICKER & MODAL CLEANUP
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && tab.url && tab.url.includes('modal=redeemBonus')) {
     const url = new URL(tab.url);
@@ -177,22 +175,40 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     chrome.scripting.executeScript({
       target: { tabId: tabId },
       func: (dropCode, dropChannel) => {
-        const run = () => {
+        // Use a persistent interval to ensure it keeps looking until modal is gone
+        const watchdog = setInterval(() => {
           const bodyText = document.body.innerText;
+          
+          // 1. Check if we are finished
           const isFinished = /invalid|unavailable|claimed|Success|found|limit|Expired|already/i.test(bodyText);
+          
           if (isFinished) {
             let status = bodyText.includes('Success') ? "Success" : "Unavailable";
             chrome.runtime.sendMessage({ action: 'FINAL_REPORT', status: status, code: dropCode, channel: dropChannel });
-            const close = document.querySelector('button[aria-label="Close"]') || 
-                          document.querySelector('.modal-close') ||
-                          Array.from(document.querySelectorAll('button')).find(b => /Dismiss|Close|Confirm/i.test(b.innerText));
-            if (close) close.click();
+            
+            // 2. Aggressive Close - Look for ANY close button or text
+            const closeBtn = document.querySelector('button[aria-label="Close"]') || 
+                             document.querySelector('.modal-close') ||
+                             Array.from(document.querySelectorAll('button')).find(b => /Dismiss|Close|Confirm/i.test(b.innerText)) ||
+                             document.querySelector('[data-test="modal-close"]');
+            
+            if (closeBtn) {
+                closeBtn.click();
+                clearInterval(watchdog);
+            }
             return;
           }
-          const btn = Array.from(document.querySelectorAll('button')).find(b => /Redeem|Submit|Claim/i.test(b.innerText) && b.offsetParent !== null && !b.disabled);
-          if (btn) { btn.click(); setTimeout(run, 500); } else { setTimeout(run, 200); }
-        };
-        run();
+
+          // 3. Keep clicking Redeem if result isn't shown yet
+          const redeemBtn = Array.from(document.querySelectorAll('button')).find(b => 
+            /Redeem|Submit|Claim/i.test(b.innerText) && b.offsetParent !== null && !b.disabled
+          );
+          if (redeemBtn) redeemBtn.click();
+          
+        }, 400);
+
+        // Safety: kill the loop after 20 seconds no matter what
+        setTimeout(() => clearInterval(watchdog), 20000);
       },
       args: [code, channel]
     });
