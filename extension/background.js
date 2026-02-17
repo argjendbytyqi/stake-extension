@@ -40,13 +40,13 @@ updateTabCache();
 function connect() {
     if (!prefs.licenseKey || prefs.connectionActive === false) return;
 
-    fetch(`http://18.199.98.207:8000/auth/token?license_key=${prefs.licenseKey}`)
+    fetch(`https://api.stakepeek.online/auth/token?license_key=${prefs.licenseKey}`)
       .then(r => r.json())
       .then(data => {
         if (!data.token) return;
         if (prefs.connectionActive === false) return;
 
-        socket = new WebSocket(`ws://18.199.98.207:8000/ws?token=${data.token}`);
+        socket = new WebSocket(`wss://api.stakepeek.online/ws?token=${data.token}`);
         socket.onopen = () => { isConnected = true; };
         
         socket.onmessage = async (event) => {

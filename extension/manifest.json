@@ -10,7 +10,8 @@
   ],
   "host_permissions": [
     "https://stake.com/*",
-    "https://stake.us/*"
+    "https://stake.us/*",
+    "https://api.stakepeek.online/*"
   ],
   "content_scripts": [
     {

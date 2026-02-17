@@ -44,7 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     saveBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Initializing...';
     
-    fetch(`http://18.199.98.207:8000/auth/token?license_key=${key}`)
+    fetch(`https://api.stakepeek.online/auth/token?license_key=${key}`)
       .then(r => r.json())
       .then(data => {
         if (data.token) {
