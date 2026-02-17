@@ -38,19 +38,15 @@ chrome.tabs.onRemoved.addListener(updateTabCache);
 updateTabCache();
 
 function connect() {
-    // 🛑 STOP: Do not connect if user explicitly disconnected
     if (!prefs.licenseKey || prefs.connectionActive === false) return;
 
     fetch(`http://18.199.98.207:8000/auth/token?license_key=${prefs.licenseKey}`)
       .then(r => r.json())
       .then(data => {
         if (!data.token) return;
-        
-        // Final check before opening socket
         if (prefs.connectionActive === false) return;
 
         socket = new WebSocket(`ws://18.199.98.207:8000/ws?token=${data.token}`);
-        
         socket.onopen = () => { isConnected = true; };
         
         socket.onmessage = async (event) => {
@@ -69,7 +65,6 @@ function connect() {
                   claimDrop(data.code, data.channel);
               }
             } else if (data.type === "ERROR" && data.message === "License already in use") {
-                // If the server kicks us, stop trying to reconnect automatically
                 chrome.storage.local.set({ connectionActive: false });
                 isConnected = false;
             }
@@ -78,15 +73,10 @@ function connect() {
 
         socket.onclose = () => {
           isConnected = false;
-          // Only auto-reconnect if it wasn't a manual disconnect
-          if (prefs.connectionActive !== false) {
-            setTimeout(connect, 5000);
-          }
+          if (prefs.connectionActive !== false) setTimeout(connect, 5000);
         };
       }).catch(e => {
-        if (prefs.connectionActive !== false) {
-            setTimeout(connect, 5000);
-        }
+        if (prefs.connectionActive !== false) setTimeout(connect, 5000);
       });
 }
 
@@ -104,7 +94,6 @@ async function claimDrop(code, channel) {
   const payload = `{"query":"mutation ClaimBonusCode($code: String!, $currency: CurrencyEnum!, $turnstileToken: String!) { claimBonusCode(code: $code, currency: $currency, turnstileToken: $turnstileToken) { ip } }","variables":{"code":"${code}","currency":"btc","turnstileToken":"${activeToken}"}}`;
 
   let alreadyReported = false;
-
   activeStakeTabs.forEach(tabId => {
     chrome.scripting.executeScript({
       target: { tabId: tabId },
@@ -119,24 +108,17 @@ async function claimDrop(code, channel) {
                 if (val) { window.cachedStakeToken = val; break; }
             }
         }
-
         if (!window.cachedStakeToken) {
           window.location.href = `https://stake.com/settings/offers?currency=btc&type=drop&code=${dropCode}&channel=${dropChannel}&modal=redeemBonus`;
           return { status: "No Token" };
         }
-
         try {
           const response = await fetch('https://stake.com/_api/graphql', {
             method: 'POST',
-            headers: { 
-                'content-type': 'application/json', 
-                'x-access-token': window.cachedStakeToken, 
-                'x-language': 'en'
-            },
+            headers: { 'content-type': 'application/json', 'x-access-token': window.cachedStakeToken, 'x-language': 'en' },
             body: readyPayload,
             priority: 'high'
           });
-          
           return { status: "COMPLETE", raw: await response.text() };
         } catch (e) { return { status: "Fetch Error" }; }
       },
@@ -168,7 +150,6 @@ function reportResult(status, code, channel) {
     if (lastSignalTime > 0) {
         const speed = Date.now() - lastSignalTime;
         chrome.storage.local.set({ lastClaimSpeed: speed });
-        console.log(`⏱️ [Blitz] RAW Speed: ${speed}ms`);
         lastSignalTime = 0; 
     }
     if (status === "Success") { try { new Audio(SUCCESS_SOUND_URL).play(); } catch(e){} }
@@ -182,7 +163,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   else if (request.action === 'RECONNECT') { 
     if (socket) socket.close(); 
     processedCodes.clear(); 
-    // This will only connect if prefs.connectionActive is true
     connect(); 
   }
   else if (request.action === 'FINAL_REPORT') {
@@ -200,22 +180,38 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     chrome.scripting.executeScript({
       target: { tabId: tabId },
       func: (dropCode, dropChannel) => {
-        const run = () => {
+        if (window.stakeBotInjected === dropCode) return;
+        window.stakeBotInjected = dropCode;
+        
+        let attempts = 0;
+        const autoClick = setInterval(() => {
           const bodyText = document.body.innerText;
           const isFinished = /invalid|unavailable|claimed|Success|found|limit|Expired|already/i.test(bodyText);
+          
           if (isFinished) {
-            let status = bodyText.includes('Success') ? "Success" : "Unavailable";
-            chrome.runtime.sendMessage({ action: 'FINAL_REPORT', status: status, code: dropCode, channel: dropChannel });
-            const close = document.querySelector('button[aria-label="Close"]') || 
-                          document.querySelector('.modal-close') ||
-                          Array.from(document.querySelectorAll('button')).find(b => /Dismiss|Close|Confirm/i.test(b.innerText));
-            if (close) close.click();
+            let finalStatus = bodyText.includes('Success') ? "Success" : "Unavailable";
+            chrome.runtime.sendMessage({ action: 'FINAL_REPORT', status: finalStatus, code: dropCode, channel: dropChannel });
+            
+            const closeBtn = document.querySelector('button[aria-label="Close"]') || 
+                           document.querySelector('.modal-close') ||
+                           Array.from(document.querySelectorAll('button')).find(b => /Dismiss|Close|Confirm/i.test(b.innerText));
+            if (closeBtn) closeBtn.click();
+            
+            clearInterval(autoClick);
+            window.stakeBotInjected = false;
             return;
           }
-          const btn = Array.from(document.querySelectorAll('button')).find(b => /Redeem|Submit|Claim/i.test(b.innerText) && b.offsetParent !== null && !b.disabled);
-          if (btn) { btn.click(); setTimeout(run, 500); } else { setTimeout(run, 200); }
-        };
-        run();
+
+          const btn = Array.from(document.querySelectorAll('button')).find(b => 
+            /Redeem|Submit|Claim/i.test(b.innerText) && b.offsetParent !== null && !b.disabled
+          );
+          if (btn) btn.click();
+          
+          if (++attempts > 40) { // Safety: stop after 20 seconds
+            clearInterval(autoClick);
+            window.stakeBotInjected = false;
+          }
+        }, 500);
       },
       args: [code, channel]
     });
