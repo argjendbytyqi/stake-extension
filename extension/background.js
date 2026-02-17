@@ -205,14 +205,32 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
           const bodyText = document.body.innerText;
           const isFinished = /invalid|unavailable|claimed|Success|found|limit|Expired|already/i.test(bodyText);
           if (isFinished) {
-            let finalStatus = bodyText.includes('Success') ? "Success" : "Unavailable";
+            let finalStatus = "Unavailable";
+            if (bodyText.includes('Success')) finalStatus = "Success";
+            if (bodyText.includes('invalid')) finalStatus = "Invalid Code";
+            if (bodyText.includes('already')) finalStatus = "Already Claimed";
+            
             chrome.runtime.sendMessage({ action: 'FINAL_REPORT', status: finalStatus, code: dropCode, channel: dropChannel });
+            
+            // Auto-close modal after reporting
+            setTimeout(() => {
+                const closeBtn = document.querySelector('button[aria-label="Close"]') || document.querySelector('.modal-close');
+                if (closeBtn) closeBtn.click();
+                window.stakeBotInjected = false;
+            }, 2000);
+            
             clearInterval(autoClick);
             return;
           }
           const btn = Array.from(document.querySelectorAll('button')).find(b => /Redeem|Submit|Claim/i.test(b.innerText) && b.offsetParent !== null && !b.disabled);
           if (btn) btn.click();
         }, 500);
+        
+        // Safety timeout to prevent infinite loops
+        setTimeout(() => { 
+            clearInterval(autoClick); 
+            window.stakeBotInjected = false; 
+        }, 30000);
       },
       args: [code, channel]
     });
