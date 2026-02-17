@@ -69,9 +69,8 @@ function connect() {
               lastSignalTime = Date.now();
               console.log(`📡 Signal: ${data.code}`);
               
-              if (processedCodes.has(data.code)) return;
+              if (!data.code || data.code === "None" || processedCodes.has(data.code)) return;
 
-              // ⚡ INSTANT CHECK: Use memory cache instead of chrome.storage.get
               const isDaily = data.channel === 'StakecomDailyDrops';
               const isHigh = data.channel === 'stakecomhighrollers';
               
@@ -101,7 +100,6 @@ function setupAFK() {
 }
 
 async function claimDrop(code, channel) {
-  // ⚡ INSTANT TAB CHECK: Use memory Set instead of chrome.tabs.query
   if (activeStakeTabs.size === 0) {
     chrome.tabs.create({ url: `https://stake.com/settings/offers?code=${code}&modal=redeemBonus` });
     return;
@@ -115,7 +113,8 @@ async function claimDrop(code, channel) {
   
   const payload = `{"query":"mutation ClaimBonusCode($code: String!, $currency: CurrencyEnum!, $turnstileToken: String!) { claimBonusCode(code: $code, currency: $currency, turnstileToken: $turnstileToken) { ip } }","variables":{"code":"${code}","currency":"btc","turnstileToken":"${activeToken}"}}`;
 
-  // Parallel Execution
+  let alreadyReported = false;
+
   activeStakeTabs.forEach(tabId => {
     chrome.scripting.executeScript({
       target: { tabId: tabId },
@@ -160,12 +159,29 @@ async function claimDrop(code, channel) {
     }).then((results) => {
       const status = results[0]?.result?.status;
       if (status && !["REDIRECTED", "No Token"].includes(status)) {
-        if (socket && socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({ type: "REPORT", status: status, code: code, channel: channel }));
+        // ⚡ SPEED CALCULATION (Immediate)
+        if (!alreadyReported) {
+            alreadyReported = true;
+            reportResult(status, code, channel);
         }
       }
     });
   });
+}
+
+function reportResult(status, code, channel) {
+    if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: "REPORT", status: status, code: code, channel: channel }));
+    }
+    if (lastSignalTime > 0) {
+        const speed = Date.now() - lastSignalTime;
+        chrome.storage.local.set({ lastClaimSpeed: speed });
+        console.log(`⏱️ [Blitz] Network Speed: ${speed}ms`);
+        lastSignalTime = 0; 
+    }
+    if (status === "Success") {
+        try { new Audio(SUCCESS_SOUND_URL).play(); } catch(e){}
+    }
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -179,15 +195,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     connect(); 
   }
   else if (request.action === 'FINAL_REPORT') {
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({ type: "REPORT", status: request.status, code: request.code, channel: request.channel }));
-    }
-    if (lastSignalTime > 0) {
-        const speed = Date.now() - lastSignalTime;
-        chrome.storage.local.set({ lastClaimSpeed: speed });
-        console.log(`⏱️ [Blitz] Speed: ${speed}ms`);
-        lastSignalTime = 0;
-    }
+      // Avoid double reporting if background already did it
+      reportResult(request.status, request.code, request.channel);
   }
 });
 
@@ -196,8 +205,6 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     const url = new URL(tab.url);
     const code = url.searchParams.get('code');
     const channel = url.searchParams.get('channel');
-    
-    // Safety check: Don't inject if code is missing or "None"
     if (!code || code === 'None' || code === 'null') return;
 
     chrome.scripting.executeScript({
@@ -208,7 +215,6 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         const autoClick = setInterval(() => {
           const bodyText = document.body.innerText;
           const isFinished = /invalid|unavailable|claimed|Success|found|limit|Expired|already/i.test(bodyText);
-          
           if (isFinished) {
             let finalStatus = "Unavailable";
             if (bodyText.includes('Success')) finalStatus = "Success";
@@ -217,31 +223,18 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
             
             chrome.runtime.sendMessage({ action: 'FINAL_REPORT', status: finalStatus, code: dropCode, channel: dropChannel });
             
-            // Auto-close logic
             const closeBtn = document.querySelector('button[aria-label="Close"]') || 
                            document.querySelector('.modal-close') ||
                            Array.from(document.querySelectorAll('button')).find(b => /Dismiss|Close/i.test(b.innerText));
             if (closeBtn) closeBtn.click();
             window.stakeBotInjected = false;
-            
             clearInterval(autoClick);
             return;
           }
-
-          // Search for the button
-          const btn = Array.from(document.querySelectorAll('button')).find(b => 
-            /Redeem|Submit|Claim/i.test(b.innerText) && 
-            b.offsetParent !== null && 
-            !b.disabled
-          );
-          
+          const btn = Array.from(document.querySelectorAll('button')).find(b => /Redeem|Submit|Claim/i.test(b.innerText) && b.offsetParent !== null && !b.disabled);
           if (btn) btn.click();
         }, 500);
-        
-        setTimeout(() => { 
-            clearInterval(autoClick); 
-            window.stakeBotInjected = false; 
-        }, 15000);
+        setTimeout(() => { clearInterval(autoClick); window.stakeBotInjected = false; }, 15000);
       },
       args: [code, channel]
     });
