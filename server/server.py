@@ -299,7 +299,11 @@ app.add_middleware(
 )
 
 # --- ROUTES ---
-@app.get("/", response_class=HTMLResponse)
+@app.get("/")
+async def root():
+    return HTMLResponse("<html><body style='background:#0b1117;color:#8b949e;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;'><div><h1>403 Forbidden</h1><p>You do not have access to this resource.</p></div></body></html>", status_code=403)
+
+@app.get("/admin-panel", response_class=HTMLResponse)
 async def admin_dashboard(page: int = 1, search: str = "", user_search: str = "", username: str = Depends(authenticate)):
     conn = sqlite3.connect(DB_PATH)
     limit = 10
