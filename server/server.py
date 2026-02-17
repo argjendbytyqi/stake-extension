@@ -114,23 +114,32 @@ class ConnectionManager:
         self.last_codes: dict[str, str] = {}
 
     async def connect(self, key: str, websocket: WebSocket):
-        # STRICT ONE-DEVICE POLICY: Block second connection even from same IP
+        # 1. Check if the existing connection is actually alive
         if key in self.active_connections:
             old_ws = self.active_connections[key]
             try:
-                # Ping the existing connection to see if it's actually active
+                # Ping the existing connection. 
+                # If this succeeds, the license is genuinely in use elsewhere.
                 await asyncio.wait_for(old_ws.send_text(json.dumps({"type": "ping"})), timeout=0.3)
-                logger.warning(f"🚫 Connection rejected: {key} is already active")
-                await websocket.accept()
-                await websocket.send_text(json.dumps({"type": "ERROR", "message": "License already in use"}))
-                await websocket.close(code=4003)
-                return False
+                
+                # If the new connection is from the SAME IP, let them in (auto-refresh)
+                if websocket.client.host == old_ws.client.host:
+                    logger.info(f"♻️ Auto-refreshing connection for {key} (Same IP)")
+                    try: await old_ws.close()
+                    except: pass
+                else:
+                    logger.warning(f"🚫 Connection rejected: {key} is already active on a different device")
+                    await websocket.accept()
+                    await websocket.send_text(json.dumps({"type": "ERROR", "message": "License already in use"}))
+                    await websocket.close(code=4003)
+                    return False
             except Exception:
-                # Old connection is dead, clean it up
+                # Existing connection is dead/unresponsive, clean it up
                 logger.info(f"♻️ Cleaning up stale connection for {key}")
-                if key in self.active_connections:
-                    del self.active_connections[key]
+                try: await old_ws.close()
+                except: pass
             
+        # 2. Accept the new connection
         await websocket.accept()
         self.active_connections[key] = websocket
         logger.info(f"➕ User connected: {key}")
