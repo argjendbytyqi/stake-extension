@@ -4,13 +4,13 @@ let hotTurnstileToken = { value: null, timestamp: 0 };
 let lastSignalTime = 0; 
 const processedCodes = new Set(); 
 
-// ⚡ PERFORMANCE CACHE
+// ⚡ GLOBAL SPEED CACHE
 let prefs = { monitorDaily: true, monitorHigh: false, licenseKey: null };
 let activeStakeTabs = new Set();
 
 const SUCCESS_SOUND_URL = "https://assets.mixkit.co/active_storage/sfx/2017/2017-preview.mp3";
 
-// 1. Pre-load preferences
+// 1. Initial Load
 chrome.storage.local.get(['licenseKey', 'monitorDaily', 'monitorHigh'], (res) => {
     prefs = { ...prefs, ...res };
     connect();
@@ -24,7 +24,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     }
 });
 
-// 2. Track tabs
+// 2. High-Speed Tab Tracking
 const updateTabCache = () => {
     chrome.tabs.query({ url: ["*://stake.com/*", "*://stake.us/*", "*://*.stake.com/*"] }, (tabs) => {
         activeStakeTabs.clear();
@@ -50,8 +50,10 @@ function connect() {
             if (data.type === "DROP") {
               lastSignalTime = Date.now();
               if (!data.code || data.code === "None" || processedCodes.has(data.code)) return;
+              
               const isDaily = data.channel === 'StakecomDailyDrops';
               const isHigh = data.channel === 'stakecomhighrollers';
+              
               if ((isDaily && prefs.monitorDaily !== false) || (isHigh && prefs.monitorHigh === true)) {
                   processedCodes.add(data.code);
                   claimDrop(data.code, data.channel);
@@ -74,34 +76,49 @@ async function claimDrop(code, channel) {
     activeToken = hotTurnstileToken.value;
   }
   
-  const payload = `{"query":"mutation ClaimBonusCode($code: String!, $currency: CurrencyEnum!, $turnstileToken: String!) { claimBonusCode(code: $code, currency: $currency, turnstileToken: $turnstileToken) { ip } }","variables":{"code":"${code}","currency":"btc","turnstileToken":"${activeToken}"}}`;
+  // ⚡ OPTIMIZATION: Move JSON.stringify OUTSIDE the tab loop to save CPU cycles
+  const payload = JSON.stringify({
+    query: "mutation ClaimBonusCode($code: String!, $currency: CurrencyEnum!, $turnstileToken: String!) { claimBonusCode(code: $code, currency: $currency, turnstileToken: $turnstileToken) { ip } }",
+    variables: { code, currency: "btc", turnstileToken: activeToken }
+  });
 
   let alreadyReported = false;
+
   activeStakeTabs.forEach(tabId => {
     chrome.scripting.executeScript({
       target: { tabId: tabId },
       func: async (dropCode, dropChannel, readyPayload) => {
         if (window.isClaiming === dropCode) return;
         window.isClaiming = dropCode;
-        const findToken = () => {
-          const keys = ['x-access-token', 'sessionToken', 'token', 'jwt'];
-          for (const k of keys) {
-            const val = window.localStorage.getItem(k) || window.sessionStorage.getItem(k);
-            if (val) return val;
-          }
-          return null;
-        };
-        const token = findToken();
-        if (!token) {
+
+        // ⚡ CAPTURE TOKEN ONCE PER SESSION
+        if (!window.cachedStakeToken) {
+            const keys = ['x-access-token', 'sessionToken', 'token', 'jwt'];
+            for (const k of keys) {
+                const val = window.localStorage.getItem(k) || window.sessionStorage.getItem(k);
+                if (val) { window.cachedStakeToken = val; break; }
+            }
+        }
+
+        if (!window.cachedStakeToken) {
           window.location.href = `https://stake.com/settings/offers?currency=btc&type=drop&code=${dropCode}&channel=${dropChannel}&modal=redeemBonus`;
           return { status: "No Token" };
         }
+
         try {
+          // ⚡ CONNECTION WARMER: Priority Fetch
           const response = await fetch('https://stake.com/_api/graphql', {
             method: 'POST',
-            headers: { 'content-type': 'application/json', 'x-access-token': token, 'x-language': 'en' },
-            body: readyPayload
+            headers: { 
+                'content-type': 'application/json', 
+                'x-access-token': window.cachedStakeToken, 
+                'x-language': 'en',
+                'accept': '*/*' // Minimal headers
+            },
+            body: readyPayload,
+            priority: 'high' // Chrome-specific optimization
           });
+          
           const resJson = await response.json();
           if (resJson.errors) {
             const msg = resJson.errors[0].message;
@@ -134,6 +151,7 @@ function reportResult(status, code, channel) {
     if (lastSignalTime > 0) {
         const speed = Date.now() - lastSignalTime;
         chrome.storage.local.set({ lastClaimSpeed: speed });
+        console.log(`⏱️ [Blitz] Final Speed: ${speed}ms`);
         lastSignalTime = 0; 
     }
     if (status === "Success") { try { new Audio(SUCCESS_SOUND_URL).play(); } catch(e){} }
@@ -154,7 +172,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-// ⚡ RE-INJECTION LOGIC (The UI Auto-Clicker)
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && tab.url && tab.url.includes('modal=redeemBonus')) {
     const url = new URL(tab.url);
@@ -169,20 +186,15 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
           const bodyText = document.body.innerText;
           const isFinished = /invalid|unavailable|claimed|Success|found|limit|Expired|already/i.test(bodyText);
           if (isFinished) {
-            let status = "Unavailable";
-            if (bodyText.includes('Success')) status = "Success";
+            let status = bodyText.includes('Success') ? "Success" : "Unavailable";
             chrome.runtime.sendMessage({ action: 'FINAL_REPORT', status: status, code: dropCode, channel: dropChannel });
-            
-            // UI CLICKER: Find ANY button that looks like a close button
             const close = document.querySelector('button[aria-label="Close"]') || 
                           document.querySelector('.modal-close') ||
                           Array.from(document.querySelectorAll('button')).find(b => /Dismiss|Close|Confirm/i.test(b.innerText));
             if (close) close.click();
             return;
           }
-          const btn = Array.from(document.querySelectorAll('button')).find(b => 
-            /Redeem|Submit|Claim/i.test(b.innerText) && b.offsetParent !== null && !b.disabled
-          );
+          const btn = Array.from(document.querySelectorAll('button')).find(b => /Redeem|Submit|Claim/i.test(b.innerText) && b.offsetParent !== null && !b.disabled);
           if (btn) { btn.click(); setTimeout(run, 500); } else { setTimeout(run, 200); }
         };
         run();
