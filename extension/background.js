@@ -1,7 +1,5 @@
 let socket = null;
 let isConnected = false;
-let isProcessing = false;
-let afkTimer = null;
 let hotTurnstileToken = { value: null, timestamp: 0 }; 
 let lastSignalTime = 0; 
 const processedCodes = new Set(); 
@@ -12,13 +10,12 @@ let activeStakeTabs = new Set();
 
 const SUCCESS_SOUND_URL = "https://assets.mixkit.co/active_storage/sfx/2017/2017-preview.mp3";
 
-// 1. Pre-load preferences into memory
+// 1. Pre-load preferences
 chrome.storage.local.get(['licenseKey', 'monitorDaily', 'monitorHigh'], (res) => {
     prefs = { ...prefs, ...res };
     connect();
 });
 
-// Update cache if user changes settings in popup
 chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local') {
         for (let [key, { newValue }] of Object.entries(changes)) {
@@ -27,7 +24,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     }
 });
 
-// 2. Track tabs in real-time to avoid chrome.tabs.query delay
+// 2. Track tabs
 const updateTabCache = () => {
     chrome.tabs.query({ url: ["*://stake.com/*", "*://stake.us/*", "*://*.stake.com/*"] }, (tabs) => {
         activeStakeTabs.clear();
@@ -36,44 +33,25 @@ const updateTabCache = () => {
 };
 chrome.tabs.onUpdated.addListener(updateTabCache);
 chrome.tabs.onRemoved.addListener(updateTabCache);
-updateTabCache(); // Initial scan
+updateTabCache();
 
 function connect() {
     if (!prefs.licenseKey) return;
-
     fetch(`http://18.199.98.207:8000/auth/token?license_key=${prefs.licenseKey}`)
       .then(r => r.json())
       .then(data => {
         if (!data.token) return;
         socket = new WebSocket(`ws://18.199.98.207:8000/ws?token=${data.token}`);
-
-        socket.onopen = () => {
-          isConnected = true;
-          setupAFK();
-          const scheduleNextPing = () => {
-            setTimeout(() => {
-              if (socket && socket.readyState === WebSocket.OPEN) {
-                socket.send(JSON.stringify({ type: "ping" }));
-                scheduleNextPing();
-              }
-            }, 25000);
-          };
-          scheduleNextPing();
-        };
-
+        socket.onopen = () => { isConnected = true; };
         socket.onmessage = async (event) => {
           if (event.data === "pong") return;
           try {
             const data = JSON.parse(event.data);
             if (data.type === "DROP") {
               lastSignalTime = Date.now();
-              console.log(`📡 Signal: ${data.code}`);
-              
               if (!data.code || data.code === "None" || processedCodes.has(data.code)) return;
-
               const isDaily = data.channel === 'StakecomDailyDrops';
               const isHigh = data.channel === 'stakecomhighrollers';
-              
               if ((isDaily && prefs.monitorDaily !== false) || (isHigh && prefs.monitorHigh === true)) {
                   processedCodes.add(data.code);
                   claimDrop(data.code, data.channel);
@@ -81,22 +59,8 @@ function connect() {
             }
           } catch (e) {}
         };
-
-        socket.onclose = () => {
-          isConnected = false;
-          setTimeout(connect, 5000);
-        };
-      })
-      .catch(e => setTimeout(connect, 5000));
-}
-
-function setupAFK() {
-  if (afkTimer) clearInterval(afkTimer);
-  afkTimer = setInterval(async () => {
-    if (activeStakeTabs.size === 0) return;
-    const tabId = Array.from(activeStakeTabs)[0];
-    chrome.tabs.sendMessage(tabId, { action: "HEARTBEAT" }).catch(() => {});
-  }, 1000 * 60 * 5);
+        socket.onclose = () => { isConnected = false; setTimeout(connect, 5000); };
+      }).catch(e => setTimeout(connect, 5000));
 }
 
 async function claimDrop(code, channel) {
@@ -106,22 +70,19 @@ async function claimDrop(code, channel) {
   }
 
   let activeToken = "";
-  const now = Date.now();
-  if (hotTurnstileToken.value && (now - hotTurnstileToken.timestamp < 90000)) {
+  if (hotTurnstileToken.value && (Date.now() - hotTurnstileToken.timestamp < 90000)) {
     activeToken = hotTurnstileToken.value;
   }
   
   const payload = `{"query":"mutation ClaimBonusCode($code: String!, $currency: CurrencyEnum!, $turnstileToken: String!) { claimBonusCode(code: $code, currency: $currency, turnstileToken: $turnstileToken) { ip } }","variables":{"code":"${code}","currency":"btc","turnstileToken":"${activeToken}"}}`;
 
   let alreadyReported = false;
-
   activeStakeTabs.forEach(tabId => {
     chrome.scripting.executeScript({
       target: { tabId: tabId },
       func: async (dropCode, dropChannel, readyPayload) => {
         if (window.isClaiming === dropCode) return;
         window.isClaiming = dropCode;
-
         const findToken = () => {
           const keys = ['x-access-token', 'sessionToken', 'token', 'jwt'];
           for (const k of keys) {
@@ -130,13 +91,11 @@ async function claimDrop(code, channel) {
           }
           return null;
         };
-
         const token = findToken();
         if (!token) {
           window.location.href = `https://stake.com/settings/offers?currency=btc&type=drop&code=${dropCode}&channel=${dropChannel}&modal=redeemBonus`;
           return { status: "No Token" };
         }
-
         try {
           const response = await fetch('https://stake.com/_api/graphql', {
             method: 'POST',
@@ -159,7 +118,6 @@ async function claimDrop(code, channel) {
     }).then((results) => {
       const status = results[0]?.result?.status;
       if (status && !["REDIRECTED", "No Token"].includes(status)) {
-        // ⚡ SPEED CALCULATION (Immediate)
         if (!alreadyReported) {
             alreadyReported = true;
             reportResult(status, code, channel);
@@ -176,12 +134,9 @@ function reportResult(status, code, channel) {
     if (lastSignalTime > 0) {
         const speed = Date.now() - lastSignalTime;
         chrome.storage.local.set({ lastClaimSpeed: speed });
-        console.log(`⏱️ [Blitz] Network Speed: ${speed}ms`);
         lastSignalTime = 0; 
     }
-    if (status === "Success") {
-        try { new Audio(SUCCESS_SOUND_URL).play(); } catch(e){}
-    }
+    if (status === "Success") { try { new Audio(SUCCESS_SOUND_URL).play(); } catch(e){} }
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -195,11 +150,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     connect(); 
   }
   else if (request.action === 'FINAL_REPORT') {
-      // Avoid double reporting if background already did it
       reportResult(request.status, request.code, request.channel);
   }
 });
 
+// ⚡ RE-INJECTION LOGIC (The UI Auto-Clicker)
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && tab.url && tab.url.includes('modal=redeemBonus')) {
     const url = new URL(tab.url);
@@ -210,31 +165,27 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     chrome.scripting.executeScript({
       target: { tabId: tabId },
       func: (dropCode, dropChannel) => {
-        if (window.stakeBotInjected) return;
-        window.stakeBotInjected = true;
-        const autoClick = setInterval(() => {
+        const run = () => {
           const bodyText = document.body.innerText;
           const isFinished = /invalid|unavailable|claimed|Success|found|limit|Expired|already/i.test(bodyText);
           if (isFinished) {
-            let finalStatus = "Unavailable";
-            if (bodyText.includes('Success')) finalStatus = "Success";
-            if (bodyText.includes('invalid')) finalStatus = "Invalid Code";
-            if (bodyText.includes('already')) finalStatus = "Already Claimed";
+            let status = "Unavailable";
+            if (bodyText.includes('Success')) status = "Success";
+            chrome.runtime.sendMessage({ action: 'FINAL_REPORT', status: status, code: dropCode, channel: dropChannel });
             
-            chrome.runtime.sendMessage({ action: 'FINAL_REPORT', status: finalStatus, code: dropCode, channel: dropChannel });
-            
-            const closeBtn = document.querySelector('button[aria-label="Close"]') || 
-                           document.querySelector('.modal-close') ||
-                           Array.from(document.querySelectorAll('button')).find(b => /Dismiss|Close/i.test(b.innerText));
-            if (closeBtn) closeBtn.click();
-            window.stakeBotInjected = false;
-            clearInterval(autoClick);
+            // UI CLICKER: Find ANY button that looks like a close button
+            const close = document.querySelector('button[aria-label="Close"]') || 
+                          document.querySelector('.modal-close') ||
+                          Array.from(document.querySelectorAll('button')).find(b => /Dismiss|Close|Confirm/i.test(b.innerText));
+            if (close) close.click();
             return;
           }
-          const btn = Array.from(document.querySelectorAll('button')).find(b => /Redeem|Submit|Claim/i.test(b.innerText) && b.offsetParent !== null && !b.disabled);
-          if (btn) btn.click();
-        }, 500);
-        setTimeout(() => { clearInterval(autoClick); window.stakeBotInjected = false; }, 15000);
+          const btn = Array.from(document.querySelectorAll('button')).find(b => 
+            /Redeem|Submit|Claim/i.test(b.innerText) && b.offsetParent !== null && !b.disabled
+          );
+          if (btn) { btn.click(); setTimeout(run, 500); } else { setTimeout(run, 200); }
+        };
+        run();
       },
       args: [code, channel]
     });
