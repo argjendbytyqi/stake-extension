@@ -122,17 +122,11 @@ class ConnectionManager:
                 # If this succeeds, the license is genuinely in use elsewhere.
                 await asyncio.wait_for(old_ws.send_text(json.dumps({"type": "ping"})), timeout=0.3)
                 
-                # If the new connection is from the SAME IP, let them in (auto-refresh)
-                if websocket.client.host == old_ws.client.host:
-                    logger.info(f"♻️ Auto-refreshing connection for {key} (Same IP)")
-                    try: await old_ws.close()
-                    except: pass
-                else:
-                    logger.warning(f"🚫 Connection rejected: {key} is already active on a different device")
-                    await websocket.accept()
-                    await websocket.send_text(json.dumps({"type": "ERROR", "message": "License already in use"}))
-                    await websocket.close(code=4003)
-                    return False
+                logger.warning(f"🚫 Connection rejected: {key} is already active")
+                await websocket.accept()
+                await websocket.send_text(json.dumps({"type": "ERROR", "message": "License already in use"}))
+                await websocket.close(code=4003)
+                return False
             except Exception:
                 # Existing connection is dead/unresponsive, clean it up
                 logger.info(f"♻️ Cleaning up stale connection for {key}")
