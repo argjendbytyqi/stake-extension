@@ -38,7 +38,7 @@ chrome.tabs.onRemoved.addListener(updateTabCache);
 updateTabCache();
 
 function connect() {
-    // ⚡ Logic: If user manually disconnected, do NOT reconnect
+    // 🛑 STOP: Do not connect if user explicitly disconnected
     if (!prefs.licenseKey || prefs.connectionActive === false) return;
 
     fetch(`http://18.199.98.207:8000/auth/token?license_key=${prefs.licenseKey}`)
@@ -46,13 +46,15 @@ function connect() {
       .then(data => {
         if (!data.token) return;
         
-        // Final safety check before opening websocket
+        // Final check before opening socket
         if (prefs.connectionActive === false) return;
 
         socket = new WebSocket(`ws://18.199.98.207:8000/ws?token=${data.token}`);
+        
         socket.onopen = () => { isConnected = true; };
+        
         socket.onmessage = async (event) => {
-          if (event.data === "pong") return;
+          if (event.data === "pong" || event.data === "ping") return;
           try {
             const data = JSON.parse(event.data);
             if (data.type === "DROP") {
@@ -66,20 +68,25 @@ function connect() {
                   processedCodes.add(data.code);
                   claimDrop(data.code, data.channel);
               }
+            } else if (data.type === "ERROR" && data.message === "License already in use") {
+                // If the server kicks us, stop trying to reconnect automatically
+                chrome.storage.local.set({ connectionActive: false });
+                isConnected = false;
             }
           } catch (e) {}
         };
-        socket.onclose = () => { 
-            isConnected = false; 
-            // ⚡ Auto-reconnect only if the session is still marked as active
-            if (prefs.connectionActive !== false) {
-                setTimeout(connect, 5000); 
-            }
+
+        socket.onclose = () => {
+          isConnected = false;
+          // Only auto-reconnect if it wasn't a manual disconnect
+          if (prefs.connectionActive !== false) {
+            setTimeout(connect, 5000);
+          }
         };
       }).catch(e => {
-          if (prefs.connectionActive !== false) {
-              setTimeout(connect, 5000);
-          }
+        if (prefs.connectionActive !== false) {
+            setTimeout(connect, 5000);
+        }
       });
 }
 
@@ -175,6 +182,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   else if (request.action === 'RECONNECT') { 
     if (socket) socket.close(); 
     processedCodes.clear(); 
+    // This will only connect if prefs.connectionActive is true
     connect(); 
   }
   else if (request.action === 'FINAL_REPORT') {
@@ -192,28 +200,22 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     chrome.scripting.executeScript({
       target: { tabId: tabId },
       func: (dropCode, dropChannel) => {
-        const watchdog = setInterval(() => {
+        const run = () => {
           const bodyText = document.body.innerText;
           const isFinished = /invalid|unavailable|claimed|Success|found|limit|Expired|already/i.test(bodyText);
           if (isFinished) {
             let status = bodyText.includes('Success') ? "Success" : "Unavailable";
             chrome.runtime.sendMessage({ action: 'FINAL_REPORT', status: status, code: dropCode, channel: dropChannel });
-            const closeBtn = document.querySelector('button[aria-label="Close"]') || 
-                             document.querySelector('.modal-close') ||
-                             Array.from(document.querySelectorAll('button')).find(b => /Dismiss|Close|Confirm/i.test(b.innerText)) ||
-                             document.querySelector('[data-test="modal-close"]');
-            if (closeBtn) {
-                closeBtn.click();
-                clearInterval(watchdog);
-            }
+            const close = document.querySelector('button[aria-label="Close"]') || 
+                          document.querySelector('.modal-close') ||
+                          Array.from(document.querySelectorAll('button')).find(b => /Dismiss|Close|Confirm/i.test(b.innerText));
+            if (close) close.click();
             return;
           }
-          const redeemBtn = Array.from(document.querySelectorAll('button')).find(b => 
-            /Redeem|Submit|Claim/i.test(b.innerText) && b.offsetParent !== null && !b.disabled
-          );
-          if (redeemBtn) redeemBtn.click();
-        }, 400);
-        setTimeout(() => clearInterval(watchdog), 20000);
+          const btn = Array.from(document.querySelectorAll('button')).find(b => /Redeem|Submit|Claim/i.test(b.innerText) && b.offsetParent !== null && !b.disabled);
+          if (btn) { btn.click(); setTimeout(run, 500); } else { setTimeout(run, 200); }
+        };
+        run();
       },
       args: [code, channel]
     });
