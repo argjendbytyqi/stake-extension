@@ -170,6 +170,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
+// ⚡ REWORKED UI LOGIC: Content script injection for modal cleanup
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && tab.url && tab.url.includes('modal=redeemBonus')) {
     const url = new URL(tab.url);
@@ -180,38 +181,43 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     chrome.scripting.executeScript({
       target: { tabId: tabId },
       func: (dropCode, dropChannel) => {
-        if (window.stakeBotInjected === dropCode) return;
-        window.stakeBotInjected = dropCode;
-        
-        let attempts = 0;
-        const autoClick = setInterval(() => {
+        const check = () => {
+          // Look for any text indicating the process finished
           const bodyText = document.body.innerText;
-          const isFinished = /invalid|unavailable|claimed|Success|found|limit|Expired|already/i.test(bodyText);
+          const isFinished = /invalid|unavailable|claimed|Success|found|limit|Expired|already|successfully/i.test(bodyText);
           
           if (isFinished) {
-            let finalStatus = bodyText.includes('Success') ? "Success" : "Unavailable";
+            let finalStatus = bodyText.includes('Success') || bodyText.includes('successfully') ? "Success" : "Unavailable";
             chrome.runtime.sendMessage({ action: 'FINAL_REPORT', status: finalStatus, code: dropCode, channel: dropChannel });
             
+            // TRY MULTIPLE WAYS TO CLOSE
             const closeBtn = document.querySelector('button[aria-label="Close"]') || 
                            document.querySelector('.modal-close') ||
+                           document.querySelector('button.close') ||
                            Array.from(document.querySelectorAll('button')).find(b => /Dismiss|Close|Confirm/i.test(b.innerText));
-            if (closeBtn) closeBtn.click();
             
-            clearInterval(autoClick);
-            window.stakeBotInjected = false;
+            if (closeBtn) {
+              closeBtn.click();
+              console.log("[Blitz] Modal closed via button click");
+            } else {
+              // Fallback: Just redirect back to settings to "close" it
+              window.location.href = "https://stake.com/settings/offers";
+            }
             return;
           }
 
+          // Not finished? Try to click Redeem if present
           const btn = Array.from(document.querySelectorAll('button')).find(b => 
             /Redeem|Submit|Claim/i.test(b.innerText) && b.offsetParent !== null && !b.disabled
           );
           if (btn) btn.click();
           
-          if (++attempts > 40) { // Safety: stop after 20 seconds
-            clearInterval(autoClick);
-            window.stakeBotInjected = false;
-          }
-        }, 500);
+          // Re-queue the check
+          setTimeout(check, 500);
+        };
+        
+        // Start the check loop
+        check();
       },
       args: [code, channel]
     });
