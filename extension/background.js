@@ -4,7 +4,7 @@ let hotTurnstileToken = { value: null, timestamp: 0 };
 let lastSignalTime = 0; 
 const processedCodes = new Set(); 
 
-// ⚡ GLOBAL SPEED CACHE
+// ⚡ PERFORMANCE CACHE
 let prefs = { monitorDaily: true, monitorHigh: false, licenseKey: null };
 let activeStakeTabs = new Set();
 
@@ -76,11 +76,8 @@ async function claimDrop(code, channel) {
     activeToken = hotTurnstileToken.value;
   }
   
-  // ⚡ OPTIMIZATION: Move JSON.stringify OUTSIDE the tab loop to save CPU cycles
-  const payload = JSON.stringify({
-    query: "mutation ClaimBonusCode($code: String!, $currency: CurrencyEnum!, $turnstileToken: String!) { claimBonusCode(code: $code, currency: $currency, turnstileToken: $turnstileToken) { ip } }",
-    variables: { code, currency: "btc", turnstileToken: activeToken }
-  });
+  // 🔥 NO-STRINGS-ATTACHED PRE-WARMED PAYLOAD
+  const payload = `{"query":"mutation ClaimBonusCode($code: String!, $currency: CurrencyEnum!, $turnstileToken: String!) { claimBonusCode(code: $code, currency: $currency, turnstileToken: $turnstileToken) { ip } }","variables":{"code":"${code}","currency":"btc","turnstileToken":"${activeToken}"}}`;
 
   let alreadyReported = false;
 
@@ -91,7 +88,6 @@ async function claimDrop(code, channel) {
         if (window.isClaiming === dropCode) return;
         window.isClaiming = dropCode;
 
-        // ⚡ CAPTURE TOKEN ONCE PER SESSION
         if (!window.cachedStakeToken) {
             const keys = ['x-access-token', 'sessionToken', 'token', 'jwt'];
             for (const k of keys) {
@@ -106,38 +102,37 @@ async function claimDrop(code, channel) {
         }
 
         try {
-          // ⚡ CONNECTION WARMER: Priority Fetch
+          // 🔥 RAW FETCH - REMOVED ASYNC JSON PARSING ON CRITICAL PATH
           const response = await fetch('https://stake.com/_api/graphql', {
             method: 'POST',
             headers: { 
                 'content-type': 'application/json', 
                 'x-access-token': window.cachedStakeToken, 
-                'x-language': 'en',
-                'accept': '*/*' // Minimal headers
+                'x-language': 'en'
             },
             body: readyPayload,
-            priority: 'high' // Chrome-specific optimization
+            priority: 'high'
           });
           
-          const resJson = await response.json();
-          if (resJson.errors) {
-            const msg = resJson.errors[0].message;
-            if (msg.includes('turnstileToken') || msg.includes('captcha')) {
-              window.location.href = `https://stake.com/settings/offers?currency=btc&type=drop&code=${dropCode}&channel=${dropChannel}&modal=redeemBonus`;
-              return { status: "REDIRECTED" };
-            }
-            return { status: msg };
-          }
-          return { status: "Success" };
+          // Speed report is based on response arrival, not parsing arrival
+          return { status: "COMPLETE", raw: await response.text() };
         } catch (e) { return { status: "Fetch Error" }; }
       },
       args: [code, channel, payload]
     }).then((results) => {
-      const status = results[0]?.result?.status;
-      if (status && !["REDIRECTED", "No Token"].includes(status)) {
+      const result = results[0]?.result;
+      if (result && result.status === "COMPLETE") {
         if (!alreadyReported) {
             alreadyReported = true;
-            reportResult(status, code, channel);
+            let finalStatus = "Success";
+            if (result.raw.includes('errors')) {
+                const resJson = JSON.parse(result.raw);
+                finalStatus = resJson.errors[0].message;
+                if (finalStatus.includes('turnstileToken') || finalStatus.includes('captcha')) {
+                    chrome.tabs.update(tabId, { url: `https://stake.com/settings/offers?currency=btc&type=drop&code=${code}&channel=${channel}&modal=redeemBonus` });
+                }
+            }
+            reportResult(finalStatus, code, channel);
         }
       }
     });
@@ -151,7 +146,7 @@ function reportResult(status, code, channel) {
     if (lastSignalTime > 0) {
         const speed = Date.now() - lastSignalTime;
         chrome.storage.local.set({ lastClaimSpeed: speed });
-        console.log(`⏱️ [Blitz] Final Speed: ${speed}ms`);
+        console.log(`⏱️ [Blitz] RAW Speed: ${speed}ms`);
         lastSignalTime = 0; 
     }
     if (status === "Success") { try { new Audio(SUCCESS_SOUND_URL).play(); } catch(e){} }
