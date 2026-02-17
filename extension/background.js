@@ -5,15 +5,17 @@ let lastSignalTime = 0;
 const processedCodes = new Set(); 
 
 // ⚡ PERFORMANCE CACHE
-let prefs = { monitorDaily: true, monitorHigh: false, licenseKey: null };
+let prefs = { monitorDaily: true, monitorHigh: false, licenseKey: null, connectionActive: true };
 let activeStakeTabs = new Set();
 
 const SUCCESS_SOUND_URL = "https://assets.mixkit.co/active_storage/sfx/2017/2017-preview.mp3";
 
 // 1. Initial Load
-chrome.storage.local.get(['licenseKey', 'monitorDaily', 'monitorHigh'], (res) => {
+chrome.storage.local.get(['licenseKey', 'monitorDaily', 'monitorHigh', 'connectionActive'], (res) => {
     prefs = { ...prefs, ...res };
-    connect();
+    if (prefs.connectionActive !== false) {
+        connect();
+    }
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -36,11 +38,17 @@ chrome.tabs.onRemoved.addListener(updateTabCache);
 updateTabCache();
 
 function connect() {
-    if (!prefs.licenseKey) return;
+    // ⚡ Logic: If user manually disconnected, do NOT reconnect
+    if (!prefs.licenseKey || prefs.connectionActive === false) return;
+
     fetch(`http://18.199.98.207:8000/auth/token?license_key=${prefs.licenseKey}`)
       .then(r => r.json())
       .then(data => {
         if (!data.token) return;
+        
+        // Final safety check before opening websocket
+        if (prefs.connectionActive === false) return;
+
         socket = new WebSocket(`ws://18.199.98.207:8000/ws?token=${data.token}`);
         socket.onopen = () => { isConnected = true; };
         socket.onmessage = async (event) => {
@@ -61,8 +69,18 @@ function connect() {
             }
           } catch (e) {}
         };
-        socket.onclose = () => { isConnected = false; setTimeout(connect, 5000); };
-      }).catch(e => setTimeout(connect, 5000));
+        socket.onclose = () => { 
+            isConnected = false; 
+            // ⚡ Auto-reconnect only if the session is still marked as active
+            if (prefs.connectionActive !== false) {
+                setTimeout(connect, 5000); 
+            }
+        };
+      }).catch(e => {
+          if (prefs.connectionActive !== false) {
+              setTimeout(connect, 5000);
+          }
+      });
 }
 
 async function claimDrop(code, channel) {
@@ -164,7 +182,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-// ⚡ UI AUTO-CLICKER & MODAL CLEANUP
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && tab.url && tab.url.includes('modal=redeemBonus')) {
     const url = new URL(tab.url);
@@ -175,39 +192,27 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     chrome.scripting.executeScript({
       target: { tabId: tabId },
       func: (dropCode, dropChannel) => {
-        // Use a persistent interval to ensure it keeps looking until modal is gone
         const watchdog = setInterval(() => {
           const bodyText = document.body.innerText;
-          
-          // 1. Check if we are finished
           const isFinished = /invalid|unavailable|claimed|Success|found|limit|Expired|already/i.test(bodyText);
-          
           if (isFinished) {
             let status = bodyText.includes('Success') ? "Success" : "Unavailable";
             chrome.runtime.sendMessage({ action: 'FINAL_REPORT', status: status, code: dropCode, channel: dropChannel });
-            
-            // 2. Aggressive Close - Look for ANY close button or text
             const closeBtn = document.querySelector('button[aria-label="Close"]') || 
                              document.querySelector('.modal-close') ||
                              Array.from(document.querySelectorAll('button')).find(b => /Dismiss|Close|Confirm/i.test(b.innerText)) ||
                              document.querySelector('[data-test="modal-close"]');
-            
             if (closeBtn) {
                 closeBtn.click();
                 clearInterval(watchdog);
             }
             return;
           }
-
-          // 3. Keep clicking Redeem if result isn't shown yet
           const redeemBtn = Array.from(document.querySelectorAll('button')).find(b => 
             /Redeem|Submit|Claim/i.test(b.innerText) && b.offsetParent !== null && !b.disabled
           );
           if (redeemBtn) redeemBtn.click();
-          
         }, 400);
-
-        // Safety: kill the loop after 20 seconds no matter what
         setTimeout(() => clearInterval(watchdog), 20000);
       },
       args: [code, channel]
